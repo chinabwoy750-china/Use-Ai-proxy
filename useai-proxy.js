@@ -1571,20 +1571,24 @@ module.exports = async function useaiProxy(opts, res) {
     );
   }
 
+  // SSE headers first — avoids Render/client idle timeout while grabbing accounts.
+  commitHeaders();
+
   let firstAccount;
   try {
-    firstAccount = await grabAccount();
+    firstAccount = await Promise.race([
+      grabAccount(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error(USEAI_CAPACITY_MSG)), 25000)),
+    ]);
   } catch (err) {
     clearInterval(keepalive);
     if (err?.message === 'pool_paused') {
-      commitHeaders();
       safeWrite('data: ' + mkChunk(completionId, model, { content: 'Please wait for the account pool to fill up. ETA: ~2 minutes. Try again shortly.' }) + '\n\n');
       safeWrite('data: ' + mkChunk(completionId, model, {}, 'stop') + '\n\n');
       safeWrite('data: [DONE]\n\n');
       safeEnd();
       return;
     }
-    commitHeaders();
     safeWrite('data: ' + mkChunk(completionId, model, { content: 'Error: ' + (err?.message || 'account creation failed') }) + '\n\n');
     safeWrite('data: ' + mkChunk(completionId, model, {}, 'stop') + '\n\n');
     safeWrite('data: [DONE]\n\n');
