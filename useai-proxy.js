@@ -1472,7 +1472,7 @@ module.exports = async function useaiProxy(opts, res) {
     });
   }
 
-  function doStream(acct, msgs, retries = 2, silentRetries = 12) {
+  function doStream(acct, msgs, retries = 1, silentRetries = 4) {
     streamWs(
       acct, model, msgs,
       (delta) => {
