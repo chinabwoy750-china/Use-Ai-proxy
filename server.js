@@ -1,7 +1,6 @@
 'use strict';
 const http = require('http');
 
-// Never let a single WS/proxy failure take down the process (Render free = 502).
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err && err.message ? err.message : err);
 });
@@ -9,7 +8,7 @@ process.on('unhandledRejection', (err) => {
   console.error('[unhandledRejection]', err && err.message ? err.message : err);
 });
 
-const useaiProxy = require('./useai-proxy');
+const deepseekProxy = require('./deepseek-proxy');
 
 const PORT = process.env.PORT || 3000;
 
@@ -26,15 +25,16 @@ const server = http.createServer(async (req, res) => {
 
     if (req.url === '/health' || req.url === '/') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ok: true, pool: useaiProxy.getPoolStats?.() || {} }));
+      return res.end(JSON.stringify({
+        ok: true,
+        upstream: 'deepseek',
+        configured: !!(process.env.DEEPSEEK_COOKIE && process.env.DEEPSEEK_TOKEN),
+      }));
     }
 
     if (req.url === '/v1/models' && req.method === 'GET') {
-      const models = (useaiProxy.MODELS || []).map(m => ({
-        id: m.slug,
-        object: 'model',
-        created: 0,
-        owned_by: 'useai',
+      const models = (deepseekProxy.MODELS || []).map(m => ({
+        id: m.slug, object: 'model', created: 0, owned_by: 'deepseek',
       }));
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ object: 'list', data: models }));
@@ -44,13 +44,12 @@ const server = http.createServer(async (req, res) => {
       let body = '';
       for await (const chunk of req) body += chunk;
       let opts;
-      try {
-        opts = JSON.parse(body);
-      } catch {
+      try { opts = JSON.parse(body); }
+      catch {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: 'bad json' }));
       }
-      return useaiProxy(opts, res);
+      return deepseekProxy(opts, res);
     }
 
     res.writeHead(404);
@@ -64,4 +63,4 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`useai-proxy listening on ${PORT}`));
+server.listen(PORT, () => console.log(`deepseek-proxy listening on ${PORT}`));

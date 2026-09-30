@@ -1,19 +1,9 @@
 {
   "name": "useai-proxy",
-  "version": "1.0.0",
-  "description": "OpenAI-compatible proxy for use.ai",
+  "version": "2.0.0",
+  "description": "OpenAI-compatible DeepSeek web proxy (PoW)",
   "main": "server.js",
-  "engines": {
-    "node": ">=18"
-  },
-  "scripts": {
-    "start": "node server.js"
-  },
-  "dependencies": {
-    "ws": "^8.18.0",
-    "socks": "^2.8.3",
-    "socks-proxy-agent": "^8.0.4",
-    "http-proxy-agent": "^7.0.2",
-    "https-proxy-agent": "^7.0.5"
-  }
+  "engines": { "node": ">=18" },
+  "scripts": { "start": "node server.js" },
+  "dependencies": {}
 }
