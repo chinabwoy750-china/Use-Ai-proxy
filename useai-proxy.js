@@ -566,15 +566,49 @@ async function connectWsWithProxy(uri, headers, proxy) {
 
 // ── Account Creation ────────────────────────────────────────────────────────
 
+// Hit the main site through the same proxy to collect Cloudflare / edge cookies
+// before auth + WS. Without these, agents.use.ai often returns 403 on WS open.
+async function warmEdgeCookies(proxy, jar) {
+  try {
+    const r = await fetchWithProxy('https://use.ai/', {
+      method: 'GET',
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Upgrade-Insecure-Requests': '1',
+      },
+      maxResponseBytes: 256 * 1024,
+    }, proxy);
+    Object.assign(jar, parseSetCookies(r.headers));
+  } catch { /* non-fatal */ }
+  try {
+    const r2 = await fetchWithProxy('https://agents.use.ai/', {
+      method: 'GET',
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept': '*/*',
+        'Origin': 'https://use.ai',
+        'Referer': 'https://use.ai/',
+        Cookie: cookieString(jar),
+      },
+      maxResponseBytes: 64 * 1024,
+    }, proxy);
+    Object.assign(jar, parseSetCookies(r2.headers));
+  } catch { /* non-fatal */ }
+}
+
 async function tryCreateAccount(proxy) {
   // Always brand-new email. Existing accounts force magic-link and cannot be
   // signed in via credentials any more.
   const email = genEmail();
   const jar = {};
 
+  await warmEdgeCookies(proxy, jar);
+
   const r1 = await fetchWithProxy(`${AUTH_BASE}/email-login`, {
     method: 'POST',
-    headers: { ...HTTP_HEADERS, 'Content-Type': 'application/json' },
+    headers: { ...HTTP_HEADERS, 'Content-Type': 'application/json', Cookie: cookieString(jar) },
     body: JSON.stringify({ email }),
   }, proxy);
   if (r1.status >= 400) throw new Error(`email-login ${r1.status}: ${(r1.body || '').slice(0, 150)}`);
@@ -1224,8 +1258,18 @@ async function streamWs(acct, model, messages, onToken, onDone, onError, abortHo
     } catch (err) {
       const msg = err?.message || String(err);
       if (/ws blocked|403|401|Unexpected server response/.test(msg)) {
-        cooldownProxy(acct.proxy, 15 * 60_000);
+        // Hard-block: auth worked but agents.use.ai WS is denied for this IP.
+        const h = getHealth(acct.proxy);
+        h.blocked = true;
+        h.fail = (h.fail || 0) + 3;
+        cooldownProxy(acct.proxy, 30 * 60_000);
         recordProxyResult(acct.proxy, false);
+        // Drop from proven so pickProxy stops preferring it
+        const idx = provenProxies.indexOf(acct.proxy);
+        if (idx >= 0) {
+          provenProxies.splice(idx, 1);
+          provenProxiesSet.delete(acct.proxy);
+        }
       }
       throw err;
     }
@@ -1428,11 +1472,15 @@ module.exports = async function useaiProxy(opts, res) {
     });
   }
 
-  function doStream(acct, msgs, retries = 1, silentRetries = 5) {
+  function doStream(acct, msgs, retries = 2, silentRetries = 12) {
     streamWs(
       acct, model, msgs,
       (delta) => {
         commitHeaders();
+        if (!gotContent.value && acct.proxy) {
+          // First token proves this proxy can open agents.use.ai WS.
+          recordProxyResult(acct.proxy, true);
+        }
         gotContent.value = true;
         fullResponse += delta;
         safeWrite('data: ' + mkChunk(completionId, model, { content: delta }) + '\n\n');
