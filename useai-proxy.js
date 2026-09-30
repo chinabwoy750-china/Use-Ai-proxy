@@ -756,13 +756,12 @@ async function scanForProxies() {
   }
 }
 
+// Home / residential hosts: set ALLOW_DIRECT=1 so auth+WS use your real ISP IP
+// instead of free datacenter proxies (which get CF 403 on agents.use.ai).
+const ALLOW_DIRECT = /^(1|true|yes)$/i.test(String(process.env.ALLOW_DIRECT || ''));
+
 async function createAccount() {
   loadProxies();
-  if (!cachedProxies.length) {
-    // Wait for an in-progress refresh, or kick one off now
-    await (refreshPromise || refreshProxies());
-    if (!cachedProxies.length) throw new Error('no proxies available');
-  }
 
   let lastErr;
 
@@ -772,6 +771,24 @@ async function createAccount() {
     if (/existing_user|magic_link/.test(msg)) return 'email';
     if (/ETIMEDOUT|ECONNREFUSED|ECONNRESET|timeout|socket hang up|CONNECT/.test(msg)) return 'conn';
     return 'other';
+  }
+
+  // Prefer direct path on residential hosts — no proxy needed.
+  if (ALLOW_DIRECT) {
+    try {
+      const acct = await tryCreateAccount(null);
+      return acct;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  if (!cachedProxies.length) {
+    await (refreshPromise || refreshProxies());
+    if (!cachedProxies.length) {
+      if (ALLOW_DIRECT && lastErr) throw lastErr;
+      throw new Error('no proxies available');
+    }
   }
 
   if (provenProxies.length) {
@@ -1247,32 +1264,39 @@ async function streamWs(acct, model, messages, onToken, onDone, onError, abortHo
       return ws;
     }
 
-    // Direct (no-proxy) connections from datacenter/Railway IPs are hard-blocked
-    // with 403. Never fall back to direct — rotate proxy instead.
-    if (!acct.proxy) {
-      throw new Error('ws blocked: no proxy on account (direct connections forbidden)');
-    }
+    // Proxy first when present; ALLOW_DIRECT enables home-IP fallback / pure direct.
     let ws;
-    try {
-      ws = await connectWs(acct.proxy, 10000);
-    } catch (err) {
-      const msg = err?.message || String(err);
-      if (/ws blocked|403|401|Unexpected server response/.test(msg)) {
-        // Hard-block: auth worked but agents.use.ai WS is denied for this IP.
-        const h = getHealth(acct.proxy);
-        h.blocked = true;
-        h.fail = (h.fail || 0) + 3;
-        cooldownProxy(acct.proxy, 30 * 60_000);
-        recordProxyResult(acct.proxy, false);
-        // Drop from proven so pickProxy stops preferring it
-        const idx = provenProxies.indexOf(acct.proxy);
-        if (idx >= 0) {
-          provenProxies.splice(idx, 1);
-          provenProxiesSet.delete(acct.proxy);
+    const tryOrder = [];
+    if (acct.proxy) tryOrder.push(acct.proxy);
+    if (ALLOW_DIRECT) tryOrder.push(undefined); // direct
+    if (!tryOrder.length) {
+      throw new Error('ws blocked: no proxy on account (set ALLOW_DIRECT=1 for home IP)');
+    }
+
+    let lastWsErr;
+    for (const proxyStr of tryOrder) {
+      try {
+        ws = await connectWs(proxyStr, 10000);
+        lastWsErr = null;
+        break;
+      } catch (err) {
+        lastWsErr = err;
+        const msg = err?.message || String(err);
+        if (proxyStr && /ws blocked|403|401|Unexpected server response/.test(msg)) {
+          const h = getHealth(proxyStr);
+          h.blocked = true;
+          h.fail = (h.fail || 0) + 3;
+          cooldownProxy(proxyStr, 30 * 60_000);
+          recordProxyResult(proxyStr, false);
+          const idx = provenProxies.indexOf(proxyStr);
+          if (idx >= 0) {
+            provenProxies.splice(idx, 1);
+            provenProxiesSet.delete(proxyStr);
+          }
         }
       }
-      throw err;
     }
+    if (!ws) throw (lastWsErr || new Error('WS connection failed'));
     if (!ws) throw new Error('WS connection failed');
     if (abortHolder?.gone) { try { ws.close(); } catch {} return; }
 
