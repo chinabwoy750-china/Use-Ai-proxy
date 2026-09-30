@@ -1,0 +1,7 @@
+node_modules/
+.env
+*.log
+useai-bots.txt
+useai-proxy-health.json
+working_proxies.txt
+proxies.txt
