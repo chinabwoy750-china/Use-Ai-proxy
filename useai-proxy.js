@@ -1162,26 +1162,52 @@ async function streamWs(acct, model, messages, onToken, onDone, onError, abortHo
         Pragma: 'no-cache',
       };
       const ws = await connectWsWithProxy(uri, wsHeaders, proxyStr);
-      await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => { try { ws.terminate(); } catch {} ws.removeAllListeners(); reject(new Error('ws open timeout')); }, timeout);
-        ws.once('open', () => { clearTimeout(timer); resolve(); });
-        ws.once('error', (e) => {
-          clearTimeout(timer);
-          try { ws.terminate(); } catch {}
+
+      // Safe kill: terminate() emits "WebSocket was closed before the connection
+      // was established" which becomes an unhandled 'error' and crashes Node if
+      // no listener is attached. Always swallow after removeAllListeners.
+      const killWs = () => {
+        try {
           ws.removeAllListeners();
+          ws.on('error', () => {});
+          if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) {
+            ws.terminate();
+          }
+        } catch {}
+      };
+
+      await new Promise((resolve, reject) => {
+        let settled = false;
+        const settle = (fn, arg) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          fn(arg);
+        };
+        const timer = setTimeout(() => {
+          killWs();
+          settle(reject, new Error('ws open timeout'));
+        }, timeout);
+
+        ws.once('open', () => settle(resolve));
+        ws.once('error', (e) => {
+          killWs();
           const msg = e?.message || String(e);
-          // Unexpected server response: 403 is the current edge block.
+          if (/closed before the connection was established/i.test(msg)) {
+            settle(reject, new Error('ws open timeout'));
+            return;
+          }
           if (/403|401|Unexpected server response/.test(msg)) {
-            reject(new Error(`ws blocked: ${msg}`));
+            settle(reject, new Error(`ws blocked: ${msg}`));
           } else {
-            reject(e);
+            settle(reject, e instanceof Error ? e : new Error(msg));
           }
         });
         ws.once('unexpected-response', (req, res) => {
-          clearTimeout(timer);
-          try { ws.terminate(); } catch {}
-          ws.removeAllListeners();
-          reject(new Error(`ws blocked: Unexpected server response: ${res.statusCode}`));
+          // Drain body so the socket can close cleanly
+          try { res.resume(); } catch {}
+          killWs();
+          settle(reject, new Error(`ws blocked: Unexpected server response: ${res.statusCode}`));
         });
       });
       return ws;
