@@ -9,8 +9,16 @@ process.on('unhandledRejection', (err) => {
 });
 
 const deepseekProxy = require('./deepseek-proxy');
+let qwenProxy = null;
+try { qwenProxy = require('./qwen-proxy'); } catch (e) {
+  console.error('[qwen] load failed', e.message);
+}
 
 const PORT = process.env.PORT || 3000;
+
+function isQwenModel(model) {
+  return /^qwen/i.test(String(model || ''));
+}
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -27,15 +35,21 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({
         ok: true,
-        upstream: 'deepseek',
-        configured: !!(process.env.DEEPSEEK_COOKIE && process.env.DEEPSEEK_TOKEN),
+        deepseek: !!(process.env.DEEPSEEK_COOKIE && process.env.DEEPSEEK_TOKEN),
+        qwen: !!(process.env.QWEN_TOKEN || process.env.QWEN_COOKIE),
       }));
     }
 
     if (req.url === '/v1/models' && req.method === 'GET') {
-      const models = (deepseekProxy.MODELS || []).map(m => ({
-        id: m.slug, object: 'model', created: 0, owned_by: 'deepseek',
-      }));
+      const models = [];
+      for (const m of (deepseekProxy.MODELS || [])) {
+        models.push({ id: m.slug, object: 'model', created: 0, owned_by: 'deepseek' });
+      }
+      if (qwenProxy) {
+        for (const m of (qwenProxy.MODELS || [])) {
+          models.push({ id: m.slug, object: 'model', created: 0, owned_by: 'qwen' });
+        }
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ object: 'list', data: models }));
     }
@@ -48,6 +62,10 @@ const server = http.createServer(async (req, res) => {
       catch {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: 'bad json' }));
+      }
+
+      if (isQwenModel(opts.model) && qwenProxy) {
+        return qwenProxy(opts, res);
       }
       return deepseekProxy(opts, res);
     }
@@ -63,4 +81,4 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`deepseek-proxy listening on ${PORT}`));
+server.listen(PORT, () => console.log(`proxy listening on ${PORT} (deepseek + qwen)`));

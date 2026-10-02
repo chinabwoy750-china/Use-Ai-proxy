@@ -34,3 +34,30 @@ curl -N http://127.0.0.1:3000/v1/chat/completions \
 ```
 
 Models: `deepseek-chat`, `deepseek-expert`, `deepseek-reasoner`
+
+## Qwen (chat.qwen.ai)
+
+Env:
+
+```bash
+export QWEN_TOKEN='...'    # localStorage.token on chat.qwen.ai
+export QWEN_COOKIE='...'   # full Cookie header from any api request
+```
+
+Browser console on https://chat.qwen.ai:
+
+```js
+(async () => {
+  const token = localStorage.getItem('token') || '';
+  const cookie = document.cookie;
+  const out = `export QWEN_TOKEN='${token}'\nexport QWEN_COOKIE='${cookie}'`;
+  console.log({ token: token.slice(0, 20) + '...', cookieLen: cookie.length });
+  try { await navigator.clipboard.writeText(out); console.log('Copied exports'); } catch {}
+  return out;
+})();
+```
+
+**Important:** paste **full Cookie** from Network tab if `document.cookie` is incomplete (need `ssxmod_itna`, `cna`, etc. for WAF).
+
+Models: `qwen3.7-plus`, `qwen3.7-max`, `qwen3.6-plus`, `qwen3-coder-plus`, …
+Routing: model names starting with `qwen` go to Qwen; others to DeepSeek.
