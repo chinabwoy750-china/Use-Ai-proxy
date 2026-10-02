@@ -8,16 +8,26 @@ process.on('unhandledRejection', (err) => {
   console.error('[unhandledRejection]', err && err.message ? err.message : err);
 });
 
-const deepseekProxy = require('./deepseek-proxy');
-let qwenProxy = null;
-try { qwenProxy = require('./qwen-proxy'); } catch (e) {
-  console.error('[qwen] load failed', e.message);
+function load(name) {
+  try { return require(name); } catch (e) {
+    console.error(`[load] ${name}:`, e.message);
+    return null;
+  }
 }
+
+const deepseekProxy = load('./deepseek-proxy');
+const qwenProxy = load('./qwen-proxy');
+const kimiProxy = load('./kimi-proxy');
+const glmProxy = load('./glm-proxy');
 
 const PORT = process.env.PORT || 3000;
 
-function isQwenModel(model) {
-  return /^qwen/i.test(String(model || ''));
+function routeProxy(model) {
+  const m = String(model || '').toLowerCase();
+  if (m.startsWith('qwen') && qwenProxy) return qwenProxy;
+  if ((m.startsWith('kimi') || m.startsWith('moonshot')) && kimiProxy) return kimiProxy;
+  if ((m.startsWith('glm') || m.startsWith('chatglm')) && glmProxy) return glmProxy;
+  return deepseekProxy;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -37,19 +47,23 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         deepseek: !!(process.env.DEEPSEEK_COOKIE && process.env.DEEPSEEK_TOKEN),
         qwen: !!(process.env.QWEN_TOKEN || process.env.QWEN_COOKIE),
+        kimi: !!process.env.KIMI_TOKEN,
+        glm: !!process.env.GLM_TOKEN,
       }));
     }
 
     if (req.url === '/v1/models' && req.method === 'GET') {
       const models = [];
-      for (const m of (deepseekProxy.MODELS || [])) {
-        models.push({ id: m.slug, object: 'model', created: 0, owned_by: 'deepseek' });
-      }
-      if (qwenProxy) {
-        for (const m of (qwenProxy.MODELS || [])) {
-          models.push({ id: m.slug, object: 'model', created: 0, owned_by: 'qwen' });
+      const add = (mod, owner) => {
+        if (!mod) return;
+        for (const m of (mod.MODELS || [])) {
+          models.push({ id: m.slug, object: 'model', created: 0, owned_by: owner });
         }
-      }
+      };
+      add(deepseekProxy, 'deepseek');
+      add(qwenProxy, 'qwen');
+      add(kimiProxy, 'kimi');
+      add(glmProxy, 'glm');
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ object: 'list', data: models }));
     }
@@ -63,11 +77,12 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: 'bad json' }));
       }
-
-      if (isQwenModel(opts.model) && qwenProxy) {
-        return qwenProxy(opts, res);
+      const proxy = routeProxy(opts.model);
+      if (!proxy) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'no upstream for model' }));
       }
-      return deepseekProxy(opts, res);
+      return proxy(opts, res);
     }
 
     res.writeHead(404);
@@ -81,4 +96,4 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`proxy listening on ${PORT} (deepseek + qwen)`));
+server.listen(PORT, () => console.log(`proxy on ${PORT} (deepseek/qwen/kimi/glm)`));
