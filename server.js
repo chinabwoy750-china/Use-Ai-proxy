@@ -18,7 +18,6 @@ function load(name) {
 const deepseekProxy = load('./deepseek-proxy');
 const qwenProxy = load('./qwen-proxy');
 const kimiProxy = load('./kimi-proxy');
-const glmProxy = load('./glm-proxy');
 
 const PORT = process.env.PORT || 3000;
 
@@ -26,7 +25,6 @@ function routeProxy(model) {
   const m = String(model || '').toLowerCase();
   if (m.startsWith('qwen') && qwenProxy) return qwenProxy;
   if ((m.startsWith('kimi') || m.startsWith('moonshot')) && kimiProxy) return kimiProxy;
-  if ((m.startsWith('glm') || m.startsWith('chatglm')) && glmProxy) return glmProxy;
   return deepseekProxy;
 }
 
@@ -47,8 +45,7 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         deepseek: !!(process.env.DEEPSEEK_COOKIE && process.env.DEEPSEEK_TOKEN),
         qwen: !!(process.env.QWEN_TOKEN || process.env.QWEN_COOKIE),
-        kimi: !!process.env.KIMI_TOKEN,
-        glm: !!process.env.GLM_TOKEN,
+        kimi: !!(process.env.KIMI_TOKEN || process.env.KIMI_REFRESH_TOKEN),
       }));
     }
 
@@ -63,7 +60,6 @@ const server = http.createServer(async (req, res) => {
       add(deepseekProxy, 'deepseek');
       add(qwenProxy, 'qwen');
       add(kimiProxy, 'kimi');
-      add(glmProxy, 'glm');
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ object: 'list', data: models }));
     }
@@ -96,4 +92,4 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`proxy on ${PORT} (deepseek/qwen/kimi/glm)`));
+server.listen(PORT, () => console.log(`proxy on ${PORT} (deepseek / qwen / kimi)`));
