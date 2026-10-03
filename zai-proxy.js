@@ -113,34 +113,30 @@ module.exports = async function zaiProxy(opts, res) {
       },
     };
 
-    const urls = [
-      `${ZAI_BASE}/api/v2/chat/completions`,
-      `${ZAI_BASE}/api/chat/completions`,
-    ];
-
-    let upstream = null;
-    let lastErr = null;
-    for (const url of urls) {
-      try {
-        upstream = await fetch(url, {
-          method: 'POST',
-          headers: headers(),
-          body: JSON.stringify(body),
-        });
-        if (upstream.ok) break;
-        const errText = await upstream.text().catch(() => '');
-        lastErr = new Error(`Z.AI ${upstream.status}: ${errText.slice(0, 220)}`);
-        // captcha / signature pages are often HTML 200 or 4xx
-        if (/text\/html/i.test(upstream.headers.get('content-type') || '') || errText.includes('<html')) {
-          lastErr = new Error('Z.AI WAF/captcha or signature required — refresh ZAI_TOKEN after a successful browser chat');
-        }
-        upstream = null;
-      } catch (e) {
-        lastErr = e;
-        upstream = null;
-      }
+    const url = `${ZAI_BASE}/api/v2/chat/completions`;
+    let upstream;
+    try {
+      upstream = await fetch(url, {
+        method: 'POST',
+        headers: {
+          ...headers(),
+          'X-Region': process.env.ZAI_REGION || 'overseas',
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      throw new Error('Z.AI fetch failed: ' + (e.message || e));
     }
-    if (!upstream) throw lastErr || new Error('Z.AI request failed');
+    if (!upstream.ok) {
+      const errText = await upstream.text().catch(() => '');
+      if (/captcha|FRONTEND_CAPTCHA|verify/i.test(errText)) {
+        throw new Error('Z.AI captcha required (Aliyun). Pure token is not enough on free Node — need browser captcha or official API key.');
+      }
+      if (upstream.status === 401 || upstream.status === 403) {
+        throw new Error(`Z.AI auth ${upstream.status}: bad/expired ZAI_TOKEN or not authenticated — ${errText.slice(0, 180)}`);
+      }
+      throw new Error(`Z.AI ${upstream.status}: ${errText.slice(0, 220)}`);
+    }
 
     const reader = upstream.body.getReader();
     const dec = new TextDecoder();
