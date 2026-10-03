@@ -1,24 +1,18 @@
 'use strict';
 /**
- * chat.z.ai (Z.AI / GLM web) OpenAI-compatible proxy
- *
- * Env:
- *   ZAI_URL   default https://chat.z.ai
- *   ZAI_TOKEN JWT from localStorage.token (or Authorization Bearer on chat requests)
- *
- * Upstream: POST /api/v2/chat/completions
- * Note: some regions/accounts need captcha / X-Signature; if you get 4xx HTML or
- * signature errors, refresh token after a successful browser chat.
+ * chat.z.ai web proxy with HMAC X-Signature (from community reverse).
+ * Env: ZAI_TOKEN (required), ZAI_URL, ZAI_FE_VERSION, ZAI_SIGNING_SECRET, ZAI_REGION
  */
 const crypto = require('crypto');
+const { signRequest } = require('./zai-signer');
 
 const ZAI_BASE = (process.env.ZAI_URL || 'https://chat.z.ai').replace(/\/$/, '');
 const ZAI_TOKEN = (process.env.ZAI_TOKEN || '').replace(/^Bearer\s+/i, '');
-const FE_VERSION = process.env.ZAI_FE_VERSION || 'prod-fe-1.1.37';
+const FE_VERSION = process.env.ZAI_FE_VERSION || 'prod-fe-1.3.0';
+const REGION = process.env.ZAI_REGION || 'overseas';
 
 const MODELS = [
   { slug: 'glm-5', label: 'GLM-5' },
-  { slug: 'glm-5.1', label: 'GLM-5.1' },
   { slug: 'glm-5.2', label: 'GLM-5.2' },
   { slug: 'glm-5.3', label: 'GLM-5.3' },
   { slug: 'glm-5.3-flash', label: 'GLM-5.3 Flash' },
@@ -27,27 +21,27 @@ const MODELS = [
 ];
 
 const ALIASES = {
-  zai: 'glm-5',
-  glm: 'glm-5',
+  zai: 'glm-5.3-flash',
+  glm: 'glm-5.3',
   'glm-flash': 'glm-5.3-flash',
-  'chatglm': 'glm-5',
+  'glm-5': 'glm-5.3',
 };
 
 function resolveModel(name) {
-  const n = String(name || 'glm-5').toLowerCase();
-  return ALIASES[n] || name || 'glm-5';
+  const n = String(name || 'glm-5.3-flash').toLowerCase();
+  return ALIASES[n] || name || 'glm-5.3-flash';
 }
 
-function headers() {
-  return {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/event-stream',
-    'Content-Type': 'application/json',
-    'Origin': ZAI_BASE,
-    'Referer': ZAI_BASE + '/',
-    'Authorization': `Bearer ${ZAI_TOKEN}`,
-    'X-FE-Version': FE_VERSION,
-  };
+function lastUser(messages) {
+  for (let i = (messages || []).length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === 'user') {
+      let c = m.content;
+      if (Array.isArray(c)) c = c.filter(p => p.type === 'text').map(p => p.text).join('\n');
+      return String(c || '');
+    }
+  }
+  return '';
 }
 
 function toMessages(messages) {
@@ -63,19 +57,12 @@ function toMessages(messages) {
   });
 }
 
-function chatId() {
-  // z.ai often wants UUID-like chat ids
-  return crypto.randomUUID();
-}
-
 module.exports = async function zaiProxy(opts, res) {
   if (!ZAI_TOKEN) {
     res.statusCode = 503;
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Access-Control-Allow-Origin', '*');
-    return res.end(JSON.stringify({
-      error: 'Set ZAI_TOKEN = localStorage.token from https://chat.z.ai',
-    }));
+    return res.end(JSON.stringify({ error: 'Set ZAI_TOKEN from chat.z.ai localStorage.token' }));
   }
 
   const model = resolveModel(opts.model);
@@ -100,42 +87,50 @@ module.exports = async function zaiProxy(opts, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     safeWrite(`data: ${mk({ role: 'assistant', content: '' })}\n\n`);
 
-    const id = chatId();
+    const prompt = lastUser(opts.messages);
+    const signed = signRequest(ZAI_TOKEN, prompt);
+    const qs = new URLSearchParams(signed.params || {}).toString();
+    const url = `${ZAI_BASE}/api/v2/chat/completions${qs ? '?' + qs : ''}`;
+
+    const msgId = crypto.randomUUID();
     const body = {
-      stream: true,
       model,
       messages: toMessages(opts.messages),
-      chat_id: id,
-      id,
+      stream: true,
+      id: msgId,
+      chat_id: crypto.randomUUID(),
+      session_id: crypto.randomUUID(),
+      signature_prompt: prompt,
       params: {},
       features: {
-        enable_thinking: /think|reason/i.test(String(opts.model || '')),
+        enable_thinking: false,
+        web_search: false,
+        auto_web_search: false,
       },
     };
 
-    const url = `${ZAI_BASE}/api/v2/chat/completions`;
-    let upstream;
-    try {
-      upstream = await fetch(url, {
-        method: 'POST',
-        headers: {
-          ...headers(),
-          'X-Region': process.env.ZAI_REGION || 'overseas',
-        },
-        body: JSON.stringify(body),
-      });
-    } catch (e) {
-      throw new Error('Z.AI fetch failed: ' + (e.message || e));
-    }
+    const upstream = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+        Accept: 'application/json, text/event-stream',
+        'Content-Type': 'application/json',
+        Origin: ZAI_BASE,
+        Referer: ZAI_BASE + '/',
+        Authorization: `Bearer ${ZAI_TOKEN}`,
+        'X-Signature': signed.signature,
+        'X-FE-Version': FE_VERSION,
+        'X-Region': REGION,
+      },
+      body: JSON.stringify(body),
+    });
+
     if (!upstream.ok) {
       const errText = await upstream.text().catch(() => '');
-      if (/captcha|FRONTEND_CAPTCHA|verify/i.test(errText)) {
-        throw new Error('Z.AI captcha required (Aliyun). Pure token is not enough on free Node — need browser captcha or official API key.');
+      if (/captcha|FRONTEND_CAPTCHA/i.test(errText)) {
+        throw new Error('Z.AI captcha required — HMAC alone not enough; need Playwright oracle or official API');
       }
-      if (upstream.status === 401 || upstream.status === 403) {
-        throw new Error(`Z.AI auth ${upstream.status}: bad/expired ZAI_TOKEN or not authenticated — ${errText.slice(0, 180)}`);
-      }
-      throw new Error(`Z.AI ${upstream.status}: ${errText.slice(0, 220)}`);
+      throw new Error(`Z.AI ${upstream.status}: ${errText.slice(0, 280)}`);
     }
 
     const reader = upstream.body.getReader();
@@ -154,21 +149,16 @@ module.exports = async function zaiProxy(opts, res) {
         if (!raw || raw === '[DONE]') continue;
         try {
           const evt = JSON.parse(raw);
-          // OpenAI-like
-          const d = evt.choices?.[0]?.delta || {};
-          if (d.reasoning_content) safeWrite(`data: ${mk({ reasoning_content: d.reasoning_content })}\n\n`);
-          if (d.content) safeWrite(`data: ${mk({ content: d.content })}\n\n`);
-          // z.ai custom shapes
-          if (evt.delta_content) safeWrite(`data: ${mk({ content: evt.delta_content })}\n\n`);
-          if (typeof evt.content === 'string' && evt.content && !d.content) {
-            // full replace style — emit as content (may duplicate; ok for v1)
-            safeWrite(`data: ${mk({ content: evt.content })}\n\n`);
+          if (evt.error) {
+            safeWrite(`data: ${mk({ content: '\n\n[Error: ' + JSON.stringify(evt.error) + ']' })}\n\n`);
+            continue;
           }
-          if (evt.data?.delta_content) safeWrite(`data: ${mk({ content: evt.data.delta_content })}\n\n`);
-          if (evt.type === 'error' || evt.error) {
-            const msg = evt.error?.message || evt.message || JSON.stringify(evt.error || evt);
-            safeWrite(`data: ${mk({ content: '\n\n[Error: ' + msg + ']' })}\n\n`);
-          }
+          const text =
+            evt.delta_content ||
+            evt.choices?.[0]?.delta?.content ||
+            (typeof evt.content === 'string' ? evt.content : '') ||
+            '';
+          if (text) safeWrite(`data: ${mk({ content: text })}\n\n`);
         } catch {}
       }
     }
