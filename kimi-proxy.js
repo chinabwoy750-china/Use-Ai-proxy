@@ -3,16 +3,20 @@
  * Kimi web proxy (www.kimi.ai overseas)
  *
  * Env:
- *   KIMI_URL           default https://www.kimi.ai
- *   KIMI_TOKEN         access_token OR refresh_token (JWT)
- *   KIMI_REFRESH_TOKEN optional long-lived refresh_token (preferred for auto-refresh)
+ *   KIMI_URL            default https://www.kimi.ai
+ *   KIMI_TOKEN          optional access_token (short-lived)
+ *   KIMI_REFRESH_TOKEN  preferred — ~90 day refresh_token from localStorage
  *
- * Refresh: GET {KIMI_URL}/api/auth/token/refresh  Authorization: Bearer <refresh_token>
- * Returns { access_token, refresh_token? }
+ * Refresh (Connect RPC, verified):
+ *   POST https://auth.kimi.ai/api/account.gateway.v1.AuthService/RefreshToken
+ *   Content-Type: application/json
+ *   Body: {"refresh_token":"<jwt>"}
+ *   Response: {"accessToken":"...","refreshToken":"..."}  // refresh rotates
  */
 const crypto = require('crypto');
 
 const KIMI_BASE = (process.env.KIMI_URL || 'https://www.kimi.ai').replace(/\/$/, '');
+const AUTH_BASE = (process.env.KIMI_AUTH_URL || 'https://auth.kimi.ai').replace(/\/$/, '');
 const ENV_TOKEN = (process.env.KIMI_TOKEN || process.env.KIMI_ACCESS_TOKEN || '').replace(/^Bearer\s+/i, '');
 const ENV_REFRESH = (process.env.KIMI_REFRESH_TOKEN || '').replace(/^Bearer\s+/i, '');
 
@@ -24,7 +28,7 @@ const MODELS = [
 
 let state = {
   access: null,
-  refresh: ENV_REFRESH || null,
+  refresh: null,
   expMs: 0,
 };
 
@@ -42,11 +46,9 @@ function decodeJwtPayload(jwt) {
 function classifyToken(jwt) {
   const p = decodeJwtPayload(jwt);
   if (!p) return { typ: 'unknown', expMs: 0 };
-  const expMs = p.exp ? p.exp * 1000 : 0;
-  return { typ: p.typ || 'unknown', expMs, payload: p };
+  return { typ: p.typ || 'unknown', expMs: p.exp ? p.exp * 1000 : 0, payload: p };
 }
 
-// Bootstrap: if KIMI_TOKEN is refresh, use it as refresh; if access, use as access
 (function bootstrap() {
   if (ENV_TOKEN) {
     const c = classifyToken(ENV_TOKEN);
@@ -58,16 +60,27 @@ function classifyToken(jwt) {
     }
   }
   if (ENV_REFRESH) state.refresh = ENV_REFRESH;
+  // If only KIMI_TOKEN was a refresh-looking JWT, already handled
+  if (!state.refresh && ENV_TOKEN && classifyToken(ENV_TOKEN).typ === 'refresh') {
+    state.refresh = ENV_TOKEN;
+  }
 })();
 
-function headers(token) {
+function browserHeaders() {
   return {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-    'Accept': 'application/json, text/event-stream',
+    'Accept': 'application/json',
     'Content-Type': 'application/json',
     'Origin': KIMI_BASE,
     'Referer': KIMI_BASE + '/',
-    'Authorization': `Bearer ${token}`,
+  };
+}
+
+function apiHeaders(token) {
+  return {
+    ...browserHeaders(),
+    Accept: 'application/json, text/event-stream',
+    Authorization: `Bearer ${token}`,
     'r-timezone': 'UTC',
     'x-language': 'en-US',
     'x-msh-platform': 'web',
@@ -76,43 +89,40 @@ function headers(token) {
 
 async function refreshAccess() {
   if (!state.refresh) {
-    throw new Error('No KIMI_REFRESH_TOKEN — set the long-lived refresh_token from localStorage (typ=refresh)');
+    throw new Error('No KIMI_REFRESH_TOKEN — set refresh_token from kimi.ai localStorage (typ=refresh)');
   }
-  const url = `${KIMI_BASE}/api/auth/token/refresh`;
+  const url = `${AUTH_BASE}/api/account.gateway.v1.AuthService/RefreshToken`;
   const r = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${state.refresh}`,
-      Accept: 'application/json',
-      Origin: KIMI_BASE,
-      Referer: KIMI_BASE + '/',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-    },
+    method: 'POST',
+    headers: browserHeaders(),
+    body: JSON.stringify({ refresh_token: state.refresh }),
   });
   const t = await r.text();
   if (!r.ok) {
-    throw new Error(`Kimi refresh ${r.status}: ${t.slice(0, 200)}`);
+    throw new Error(`Kimi refresh ${r.status}: ${t.slice(0, 250)}`);
   }
   let j;
   try { j = JSON.parse(t); } catch {
     throw new Error('Kimi refresh: non-JSON response');
   }
-  const access = j.access_token || j.accessToken;
-  if (!access) throw new Error('Kimi refresh: missing access_token');
-  if (j.refresh_token) state.refresh = j.refresh_token;
+  // Response is camelCase
+  const access = j.accessToken || j.access_token;
+  const newRefresh = j.refreshToken || j.refresh_token;
+  if (!access) throw new Error('Kimi refresh: missing accessToken in ' + t.slice(0, 150));
+  if (newRefresh) state.refresh = newRefresh; // rotated — must keep
   const c = classifyToken(access);
   state.access = access;
   state.expMs = c.expMs || (Date.now() + 14 * 60_000);
-  console.log('[kimi] refreshed access_token, exp in', Math.round((state.expMs - Date.now()) / 1000), 's');
+  console.log('[kimi] refreshed accessToken, exp in', Math.round((state.expMs - Date.now()) / 1000), 's');
   return access;
 }
 
 async function getAccess() {
-  const skew = 60_000; // refresh 1 min early
+  const skew = 60_000;
   if (state.access && state.expMs > Date.now() + skew) return state.access;
   if (state.refresh) return refreshAccess();
-  if (state.access) return state.access; // last resort even if near expiry
-  throw new Error('Set KIMI_TOKEN (access) and/or KIMI_REFRESH_TOKEN (refresh, ~90 days)');
+  if (state.access) return state.access;
+  throw new Error('Set KIMI_REFRESH_TOKEN (preferred) or KIMI_TOKEN access_token');
 }
 
 function lastUser(messages) {
@@ -130,7 +140,7 @@ function lastUser(messages) {
 async function createChat(token) {
   const r = await fetch(`${KIMI_BASE}/api/chat`, {
     method: 'POST',
-    headers: headers(token),
+    headers: apiHeaders(token),
     body: JSON.stringify({ name: 'New Chat', is_example: false }),
   });
   const t = await r.text();
@@ -151,7 +161,7 @@ module.exports = async function kimiProxy(opts, res) {
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.end(JSON.stringify({
-      error: 'Set KIMI_REFRESH_TOKEN (preferred) or KIMI_TOKEN access_token from kimi.ai localStorage',
+      error: 'Set KIMI_REFRESH_TOKEN (localStorage refresh_token) or KIMI_TOKEN (access_token)',
     }));
   }
 
@@ -182,7 +192,7 @@ module.exports = async function kimiProxy(opts, res) {
     try {
       chatId = await createChat(token);
     } catch (e) {
-      if (/401|expired|invalid/i.test(String(e.message)) && state.refresh) {
+      if (/401|expired|invalid|unauthenticated/i.test(String(e.message)) && state.refresh) {
         token = await refreshAccess();
         chatId = await createChat(token);
       } else throw e;
@@ -199,14 +209,14 @@ module.exports = async function kimiProxy(opts, res) {
 
     let streamRes = await fetch(streamUrl, {
       method: 'POST',
-      headers: { ...headers(token), Accept: 'text/event-stream' },
+      headers: { ...apiHeaders(token), Accept: 'text/event-stream' },
       body: JSON.stringify(body),
     });
     if (streamRes.status === 401 && state.refresh) {
       token = await refreshAccess();
       streamRes = await fetch(streamUrl, {
         method: 'POST',
-        headers: { ...headers(token), Accept: 'text/event-stream' },
+        headers: { ...apiHeaders(token), Accept: 'text/event-stream' },
         body: JSON.stringify(body),
       });
     }
@@ -232,7 +242,6 @@ module.exports = async function kimiProxy(opts, res) {
         if (!raw || raw === '[DONE]') continue;
         try {
           const evt = JSON.parse(raw);
-          // Skip pure echoes of the user prompt at the start
           let text = evt.text || evt.content || evt.choices?.[0]?.delta?.content || '';
           if (typeof text !== 'string' || !text) continue;
           if (!sawAssistant && text.trim() === prompt.trim()) continue;
