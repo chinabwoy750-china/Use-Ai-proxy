@@ -7,35 +7,82 @@ const { solveChallengeAsync, buildPowHeader } = require('./pow-solver');
 //   DEEPSEEK_URL   e.g. 'https://chat.deepseek.com'
 //   DEEPSEEK_COOKIE
 //   DEEPSEEK_TOKEN
-let DEEPSEEK_URL, DEEPSEEK_COOKIE, DEEPSEEK_TOKEN;
+let DEEPSEEK_URL = process.env.DEEPSEEK_URL || 'https://chat.deepseek.com';
 try {
-  ({ DEEPSEEK_URL, DEEPSEEK_COOKIE, DEEPSEEK_TOKEN } = require('./secrets'));
-} catch {
-  DEEPSEEK_URL = process.env.DEEPSEEK_URL || 'https://chat.deepseek.com';
-  DEEPSEEK_COOKIE = process.env.DEEPSEEK_COOKIE || '';
-  DEEPSEEK_TOKEN = process.env.DEEPSEEK_TOKEN || '';
+  const secrets = require('./secrets');
+  if (secrets.DEEPSEEK_URL) DEEPSEEK_URL = secrets.DEEPSEEK_URL;
+  if (secrets.DEEPSEEK_TOKEN && !process.env.DEEPSEEK_TOKEN) process.env.DEEPSEEK_TOKEN = secrets.DEEPSEEK_TOKEN;
+  if (secrets.DEEPSEEK_COOKIE && !process.env.DEEPSEEK_COOKIE) process.env.DEEPSEEK_COOKIE = secrets.DEEPSEEK_COOKIE;
+} catch (_) {}
+
+/**
+ * Account pool. Separators:
+ *   DEEPSEEK_TOKEN  — single token OR comma-separated tokens
+ *   DEEPSEEK_COOKIE — single cookie OR use ||| between accounts (cookies contain commas)
+ *   Or DEEPSEEK_ACCOUNTS="token1|cookie1\ntoken2|cookie2"
+ */
+function loadAccounts() {
+  const accounts = [];
+  const rawAccounts = process.env.DEEPSEEK_ACCOUNTS || '';
+  if (rawAccounts.trim()) {
+    for (const line of rawAccounts.split(/[\n;]+/)) {
+      const s = line.trim();
+      if (!s) continue;
+      const pipe = s.indexOf('|');
+      if (pipe === -1) accounts.push({ token: s, cookie: '' });
+      else accounts.push({ token: s.slice(0, pipe).trim(), cookie: s.slice(pipe + 1).trim() });
+    }
+  }
+  const tokens = (process.env.DEEPSEEK_TOKEN || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const cookies = (process.env.DEEPSEEK_COOKIE || '').split('|||').map((x) => x.trim());
+  if (!accounts.length && tokens.length) {
+    for (let i = 0; i < tokens.length; i++) {
+      accounts.push({ token: tokens[i], cookie: cookies[i] || cookies[0] || '' });
+    }
+  }
+  return accounts;
 }
 
-const DS_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:153.0) Gecko/20100101 Firefox/153.0',
-  'Accept': '*/*',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'Content-Type': 'application/json',
-  'Authorization': `Bearer ${DEEPSEEK_TOKEN}`,
-  'Cookie': DEEPSEEK_COOKIE,
-  'Origin': DEEPSEEK_URL,
-  'Referer': `${DEEPSEEK_URL}/`,
-  'x-client-bundle-id': 'com.deepseek.chat',
-  'x-client-platform': 'web',
-  'x-client-version': '2.2.0',
-  'x-client-locale': 'en_US',
-  'x-client-timezone-offset': '3600',
-  'Sec-Fetch-Dest': 'empty',
-  'Sec-Fetch-Mode': 'cors',
-  'Sec-Fetch-Site': 'same-origin',
-  'Pragma': 'no-cache',
-  'Cache-Control': 'no-cache',
-};
+let ACCOUNTS = loadAccounts();
+let accountIndex = 0;
+let activeSessionId = null;
+
+function currentAccount() {
+  if (!ACCOUNTS.length) return { token: '', cookie: '' };
+  return ACCOUNTS[accountIndex % ACCOUNTS.length];
+}
+
+function rotateAccount(reason) {
+  if (ACCOUNTS.length < 2) return false;
+  accountIndex = (accountIndex + 1) % ACCOUNTS.length;
+  activeSessionId = null;
+  console.log('[deepseek] rotate account ->', accountIndex, reason || '');
+  return true;
+}
+
+function DS_HEADERS() {
+  const acc = currentAccount();
+  return {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:153.0) Gecko/20100101 Firefox/153.0',
+    'Accept': '*/*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${acc.token}`,
+    'Cookie': acc.cookie,
+    'Origin': DEEPSEEK_URL,
+    'Referer': `${DEEPSEEK_URL}/`,
+    'x-client-bundle-id': 'com.deepseek.chat',
+    'x-client-platform': 'web',
+    'x-client-version': '2.2.0',
+    'x-client-locale': 'en_US',
+    'x-client-timezone-offset': '3600',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-origin',
+    'Pragma': 'no-cache',
+    'Cache-Control': 'no-cache',
+  };
+}
 
 function jsonErr(res, status, msg) {
   res.statusCode = status;
@@ -102,6 +149,8 @@ function buildPrompt(system_prompt, history, message) {
 async function deepseekProxy(opts, res) {
   const isExpert = opts.model === 'deepseek-expert'
     || opts.model === 'deepseek-reasoner'
+    || opts.model === 'deepseek-r1'
+    || opts.model === 'deepseek'
     || opts.thinking === true
     || (opts.thinking && opts.thinking.type === 'enabled');
 
@@ -138,15 +187,15 @@ async function deepseekProxy(opts, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.write(`data: ${mkChunk({ role: 'assistant', content: '' })}\n\n`);
 
-    if (!DEEPSEEK_TOKEN && !DEEPSEEK_COOKIE) {
-      throw new Error('Missing DEEPSEEK_TOKEN / DEEPSEEK_COOKIE — set secrets.js or env');
+    if (!ACCOUNTS.length || (!currentAccount().token && !currentAccount().cookie)) {
+      throw new Error('Missing DEEPSEEK_TOKEN / DEEPSEEK_COOKIE — set env (multi: DEEPSEEK_ACCOUNTS or TOKEN,TOKEN with COOKIE|||COOKIE)');
     }
 
     // 1. Session
     if (!activeSessionId) {
       const createRes = await fetch(`${DEEPSEEK_URL}/api/v0/chat_session/create`, {
         method: 'POST',
-        headers: DS_HEADERS,
+        headers: DS_HEADERS(),
         body: '{}',
       });
       if (!createRes.ok) {
@@ -166,7 +215,7 @@ async function deepseekProxy(opts, res) {
     // 2. PoW challenge
     const challengeRes = await fetch(`${DEEPSEEK_URL}/api/v0/chat/create_pow_challenge`, {
       method: 'POST',
-      headers: DS_HEADERS,
+      headers: DS_HEADERS(),
       body: JSON.stringify({ target_path: '/api/v0/chat/completion' }),
     });
     if (!challengeRes.ok) {
@@ -200,7 +249,7 @@ async function deepseekProxy(opts, res) {
     // 4. Completion stream
     const chatRes = await fetch(`${DEEPSEEK_URL}/api/v0/chat/completion`, {
       method: 'POST',
-      headers: { ...DS_HEADERS, 'x-ds-pow-response': powHeader },
+      headers: { ...DS_HEADERS(), 'x-ds-pow-response': powHeader },
       signal: abortCtrl.signal,
       body: JSON.stringify({
         chat_session_id: activeSessionId,
@@ -217,7 +266,13 @@ async function deepseekProxy(opts, res) {
 
     if (!chatRes.ok) {
       const errText = await chatRes.text().catch(() => '');
-      throw new Error(`DeepSeek chat failed (${chatRes.status}): ${errText.slice(0, 200)}`);
+      const msg = `DeepSeek chat failed (${chatRes.status}): ${errText.slice(0, 200)}`;
+      if (/401|403|40003|invalid token|expired|muted/i.test(msg) && rotateAccount(msg)) {
+        throw new Error(msg + ' (rotated account — retry request)');
+      }
+      // reset session on transient failures
+      if (/401|403|429|502|503/i.test(String(chatRes.status))) activeSessionId = null;
+      throw new Error(msg);
     }
 
     const ctype = (chatRes.headers.get('content-type') || '').toLowerCase();
@@ -405,12 +460,12 @@ async function deepseekDelete({ session_id }, res) {
     const r = await fetch(`${DEEPSEEK_URL}/api/v0/chat_session/${session_id}`, {
       method: 'DELETE',
       headers: {
-        'Cookie': DEEPSEEK_COOKIE,
+        'Cookie': currentAccount().cookie,
         'Origin': DEEPSEEK_URL,
         'Referer': `${DEEPSEEK_URL}/`,
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'x-client-bundle-id': 'com.deepseek.chat',
-        'Authorization': `Bearer ${DEEPSEEK_TOKEN}`,
+        'Authorization': `Bearer ${currentAccount().token}`,
       },
     });
     res.statusCode = r.ok ? 200 : r.status;
@@ -423,10 +478,14 @@ async function deepseekDelete({ session_id }, res) {
 }
 
 deepseekProxy.MODELS = [
-  { slug: 'deepseek-chat' },
-  { slug: 'deepseek-expert' },
-  { slug: 'deepseek-reasoner' },
+  { slug: 'deepseek-chat', label: 'DeepSeek Chat' },
+  { slug: 'deepseek-expert', label: 'DeepSeek Expert / R1' },
+  { slug: 'deepseek-reasoner', label: 'DeepSeek Reasoner' },
+  { slug: 'deepseek-r1', label: 'DeepSeek R1 alias' },
+  { slug: 'deepseek', label: 'DeepSeek default' },
 ];
+deepseekProxy.accountCount = () => ACCOUNTS.length;
+
 deepseekProxy.deepseekDelete = deepseekDelete;
 module.exports = deepseekProxy;
 module.exports.deepseekProxy = deepseekProxy;

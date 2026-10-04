@@ -21,10 +21,34 @@ const ENV_TOKEN = (process.env.KIMI_TOKEN || process.env.KIMI_ACCESS_TOKEN || ''
 const ENV_REFRESH = (process.env.KIMI_REFRESH_TOKEN || '').replace(/^Bearer\s+/i, '');
 
 const MODELS = [
-  { slug: 'kimi', label: 'Kimi' },
+  { slug: 'kimi', label: 'Kimi (default)' },
+  { slug: 'kimi-latest', label: 'Kimi latest' },
   { slug: 'kimi-k2', label: 'Kimi K2' },
-  { slug: 'moonshot-v1', label: 'Moonshot' },
+  { slug: 'kimi-k1', label: 'Kimi K1 / thinking' },
+  { slug: 'kimi-search', label: 'Kimi + web search' },
+  { slug: 'kimi-research', label: 'Kimi deep research' },
+  { slug: 'kimi-silent', label: 'Kimi silent search' },
+  { slug: 'moonshot-v1', label: 'Moonshot alias' },
 ];
+
+/** Map OpenAI model id -> upstream completion flags */
+function modelOptions(modelName) {
+  const m = String(modelName || 'kimi').toLowerCase();
+  const o = {
+    use_search: false,
+    use_deep_research: false,
+    use_semantic_memory: false,
+    kimiplus_id: 'kimi',
+    // scenario hints some clients send as model suffix
+  };
+  if (m.includes('search') || m.includes('web')) o.use_search = true;
+  if (m.includes('research') || m.includes('explore')) o.use_deep_research = true;
+  if (m.includes('silent')) { o.use_search = true; o.silent_search = true; }
+  if (m.includes('k2')) o.kimiplus_id = 'kimi'; // K2 still uses kimi chat surface on web
+  if (m.includes('k1') || m.includes('think') || m.includes('reason')) o.thinking = true;
+  // explicit opts from client body win later
+  return o;
+}
 
 let state = {
   access: null,
@@ -200,11 +224,16 @@ module.exports = async function kimiProxy(opts, res) {
 
     const prompt = lastUser(opts.messages);
     const streamUrl = `${KIMI_BASE}/api/chat/${chatId}/completion/stream`;
+    const mo = modelOptions(model);
     const body = {
       messages: [{ role: 'user', content: prompt }],
       references: [],
-      use_search: !!opts.use_search,
-      use_deep_research: false,
+      refs: [],
+      history: [],
+      kimiplus_id: mo.kimiplus_id || 'kimi',
+      use_search: opts.use_search != null ? !!opts.use_search : !!mo.use_search,
+      use_deep_research: opts.use_deep_research != null ? !!opts.use_deep_research : !!mo.use_deep_research,
+      use_semantic_memory: false,
     };
 
     let streamRes = await fetch(streamUrl, {
