@@ -242,6 +242,15 @@ async function deepseekProxy(opts, res) {
     );
 
     const prompt = buildPrompt(system_prompt, history, message);
+    const wantSearch =
+      opts.search_enabled === true
+      || /search/i.test(String(opts.model || ''))
+      || /\b(web\s*search|search the web|do a (web )?search|google|look up|find online|list .{0,40} websites?)\b/i.test(
+        message || ''
+      );
+    // Default on for deepseek chat unless explicitly disabled
+    const searchEnabled = opts.search_enabled === false ? false : true;
+    const idleMs = searchEnabled || wantSearch ? 180000 : 90000;
 
     abortCtrl = new AbortController();
     res.on?.('close', onClientClose);
@@ -257,8 +266,8 @@ async function deepseekProxy(opts, res) {
         model_type: isExpert ? 'expert' : null,
         prompt,
         ref_file_ids: [],
-        thinking_enabled: !!isExpert,
-        search_enabled: opts.search_enabled !== false,
+        thinking_enabled: !!isExpert || !!wantSearch,
+        search_enabled: searchEnabled,
         action: null,
         preempt: false,
       }),
@@ -299,6 +308,10 @@ async function deepseekProxy(opts, res) {
     let dsEvent = '';
     let streamDone = false;
     let inThinking = !!isExpert;
+    let sawResponseContent = false;
+    let sawSearchPhase = false;
+    let responseChars = 0;
+    const SEARCH_ANN = /I('ll| will) use the search tool|searching the web|web search tool|^SEARCH\b|^WEB_SEARCH\b|^SEARCHING\b/i;
 
     let idleTimer = null;
     let timedOut = false;
@@ -308,7 +321,7 @@ async function deepseekProxy(opts, res) {
         timedOut = true;
         streamDone = true;
         try { reader.cancel(); } catch {}
-      }, 45000);
+      }, idleMs);
     };
 
     while (!streamDone) {
@@ -341,6 +354,9 @@ async function deepseekProxy(opts, res) {
           dsEvent = '';
 
           if (evtType === 'close') {
+            if ((searchEnabled || wantSearch) && !sawResponseContent) {
+              emitOpenAI({ content: '\n\n[Error: DeepSeek closed before final answer after search]' });
+            }
             emitOpenAI({}, 'stop');
             safeWrite('data: [DONE]\n\n');
             streamDone = true;
@@ -360,6 +376,10 @@ async function deepseekProxy(opts, res) {
                 && (item.v === 'FINISHED' || item.v === 'CONTENT_FILTER')
               )
             ) {
+              if ((searchEnabled || wantSearch) && sawSearchPhase && !sawResponseContent && responseChars < 60) {
+                console.log('[deepseek] ignore early BATCH FINISHED during search');
+                continue;
+              }
               emitOpenAI({}, 'stop');
               safeWrite('data: [DONE]\n\n');
               streamDone = true;
@@ -367,12 +387,39 @@ async function deepseekProxy(opts, res) {
             }
 
             // Initial envelope with fragments
+            // Search results path
+            if (
+              evt.p === 'response/search_results'
+              || (typeof evt.p === 'string' && /search_results|\/results$/i.test(evt.p))
+            ) {
+              sawSearchPhase = true;
+              const n = Array.isArray(evt.v) ? evt.v.length : 0;
+              if (n) emitOpenAI({ content: `\n[Found ${n} web page(s)]\n` });
+              continue;
+            }
+
+            // fragments
             if (evt.v && evt.v.response && Array.isArray(evt.v.response.fragments)) {
               for (const frag of evt.v.response.fragments) {
-                if (frag.type === 'RESPONSE') {
-                  inThinking = false;
+                const ftype = String(frag.type || '').toUpperCase();
+                if (ftype === 'SEARCH' || ftype === 'SEARCH_RESULT' || ftype === 'WEB_SEARCH') {
+                  sawSearchPhase = true;
                   if (frag.content) emitOpenAI({ content: frag.content });
-                } else if (frag.type === 'THINK') {
+                  continue;
+                }
+                if (ftype === 'RESPONSE') {
+                  inThinking = false;
+                  if (frag.content) {
+                    if (SEARCH_ANN.test(frag.content) && frag.content.length < 120) {
+                      sawSearchPhase = true;
+                      emitOpenAI({ content: frag.content });
+                    } else {
+                      sawResponseContent = true;
+                      responseChars += frag.content.length;
+                      emitOpenAI({ content: frag.content });
+                    }
+                  }
+                } else if (ftype === 'THINK' || ftype === 'REASONING') {
                   inThinking = true;
                   if (frag.content) emitOpenAI({ reasoning_content: frag.content });
                 }
@@ -382,15 +429,34 @@ async function deepseekProxy(opts, res) {
             // APPEND array of fragment-like items
             if (evt.o === 'APPEND' && Array.isArray(evt.v)) {
               for (const item of evt.v) {
-                if (item.type === 'RESPONSE') {
-                  inThinking = false;
+                const itype = String(item.type || '').toUpperCase();
+                if (itype === 'SEARCH' || itype === 'SEARCH_RESULT' || itype === 'WEB_SEARCH') {
+                  sawSearchPhase = true;
                   if (item.content) emitOpenAI({ content: item.content });
-                } else if (item.type === 'THINK') {
+                  continue;
+                }
+                if (itype === 'RESPONSE') {
+                  inThinking = false;
+                  if (item.content) {
+                    if (SEARCH_ANN.test(item.content) && item.content.length < 120) {
+                      sawSearchPhase = true;
+                      emitOpenAI({ content: item.content });
+                    } else {
+                      sawResponseContent = true;
+                      responseChars += item.content.length;
+                      emitOpenAI({ content: item.content });
+                    }
+                  }
+                } else if (itype === 'THINK' || itype === 'REASONING') {
                   inThinking = true;
                   if (item.content) emitOpenAI({ reasoning_content: item.content });
                 } else if (typeof item === 'string') {
                   if (inThinking) emitOpenAI({ reasoning_content: item });
-                  else emitOpenAI({ content: item });
+                  else {
+                    if (SEARCH_ANN.test(item) && item.length < 120) sawSearchPhase = true;
+                    else { sawResponseContent = true; responseChars += item.length; }
+                    emitOpenAI({ content: item });
+                  }
                 }
               }
               continue;
@@ -398,13 +464,25 @@ async function deepseekProxy(opts, res) {
 
             // Path-based APPEND / SET on content
             if (evt.p && typeof evt.v === 'string') {
-              const isThinkPath = /think|reasoning/i.test(evt.p) || inThinking;
-              const isContentPath = /\/content|fragments/i.test(evt.p) || !evt.p;
-              if (isThinkPath && !/RESPONSE/i.test(evt.p)) {
-                emitOpenAI({ reasoning_content: evt.v });
-              } else if (isContentPath) {
-                inThinking = false;
+              const isThinkPath = /think|reasoning/i.test(evt.p);
+              const isSearchPath = /search/i.test(evt.p);
+              const isContentPath = /\/content|fragments|RESPONSE/i.test(evt.p);
+              if (isSearchPath) {
+                sawSearchPhase = true;
                 emitOpenAI({ content: evt.v });
+              } else if (isThinkPath && !/RESPONSE/i.test(evt.p)) {
+                inThinking = true;
+                emitOpenAI({ reasoning_content: evt.v });
+              } else if (isContentPath || (!/think|status|token/i.test(evt.p))) {
+                inThinking = false;
+                if (SEARCH_ANN.test(evt.v) && evt.v.length < 120) {
+                  sawSearchPhase = true;
+                  emitOpenAI({ content: evt.v });
+                } else {
+                  sawResponseContent = true;
+                  responseChars += evt.v.length;
+                  emitOpenAI({ content: evt.v });
+                }
               }
               continue;
             }
@@ -412,12 +490,20 @@ async function deepseekProxy(opts, res) {
             // Bare string token
             if (typeof evt.v === 'string' && !evt.p && !evt.o) {
               if (inThinking) emitOpenAI({ reasoning_content: evt.v });
-              else emitOpenAI({ content: evt.v });
+              else {
+                if (SEARCH_ANN.test(evt.v) && evt.v.length < 120) sawSearchPhase = true;
+                else { sawResponseContent = true; responseChars += evt.v.length; }
+                emitOpenAI({ content: evt.v });
+              }
               continue;
             }
 
-            // status SET FINISHED
+            // status SET FINISHED — ignore intermediate finish after search tool announce
             if (evt.p && /status$/i.test(evt.p) && (evt.v === 'FINISHED' || evt.v === 'CONTENT_FILTER')) {
+              if ((searchEnabled || wantSearch) && sawSearchPhase && !sawResponseContent && responseChars < 60) {
+                console.log('[deepseek] ignore early FINISHED during search; waiting for answer');
+                continue;
+              }
               emitOpenAI({}, 'stop');
               safeWrite('data: [DONE]\n\n');
               streamDone = true;
