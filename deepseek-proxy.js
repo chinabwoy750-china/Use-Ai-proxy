@@ -307,11 +307,43 @@ async function deepseekProxy(opts, res) {
     let sseBuffer = '';
     let dsEvent = '';
     let streamDone = false;
+    // Start in thinking channel when thinking is enabled; switch to content only on RESPONSE fragments.
     let inThinking = !!isExpert;
+    let sawResponseFragment = false; // true once a RESPONSE-type fragment appears
     let sawResponseContent = false;
     let sawSearchPhase = false;
     let responseChars = 0;
+    const fragTypeByIndex = Object.create(null); // index -> 'THINK' | 'RESPONSE' | 'SEARCH'
     const SEARCH_ANN = /I('ll| will) use the search tool|searching the web|web search tool|^SEARCH\b|^WEB_SEARCH\b|^SEARCHING\b/i;
+
+    function emitToken(text, forceChannel) {
+      if (!text) return;
+      const channel = forceChannel || (sawResponseFragment || !inThinking ? 'content' : 'think');
+      if (channel === 'think') {
+        emitOpenAI({ reasoning_content: text });
+      } else {
+        if (SEARCH_ANN.test(text) && text.length < 120) {
+          sawSearchPhase = true;
+          emitOpenAI({ content: text });
+        } else {
+          sawResponseContent = true;
+          responseChars += text.length;
+          emitOpenAI({ content: text });
+        }
+      }
+    }
+
+    function noteFragType(idx, type) {
+      const t = String(type || '').toUpperCase();
+      if (!t) return;
+      fragTypeByIndex[idx] = t;
+      if (t === 'THINK' || t === 'REASONING') inThinking = true;
+      if (t === 'RESPONSE') {
+        inThinking = false;
+        sawResponseFragment = true;
+      }
+      if (t === 'SEARCH' || t === 'SEARCH_RESULT' || t === 'WEB_SEARCH') sawSearchPhase = true;
+    }
 
     let idleTimer = null;
     let timedOut = false;
@@ -398,8 +430,20 @@ async function deepseekProxy(opts, res) {
               continue;
             }
 
-            // fragments
+            // Track fragment type assignments: response/fragments/0/type
+            if (typeof evt.p === 'string') {
+              const tm = evt.p.match(/fragments\/(-?\d+)\/type$/i);
+              if (tm && (typeof evt.v === 'string' || typeof evt.v === 'number')) {
+                noteFragType(tm[1], evt.v);
+                continue;
+              }
+            }
+
+            // fragments envelope
             if (evt.v && evt.v.response && Array.isArray(evt.v.response.fragments)) {
+              evt.v.response.fragments.forEach((frag, i) => {
+                if (frag && frag.type) noteFragType(String(i), frag.type);
+              });
               for (const frag of evt.v.response.fragments) {
                 const ftype = String(frag.type || '').toUpperCase();
                 if (ftype === 'SEARCH' || ftype === 'SEARCH_RESULT' || ftype === 'WEB_SEARCH') {
@@ -407,21 +451,15 @@ async function deepseekProxy(opts, res) {
                   if (frag.content) emitOpenAI({ content: frag.content });
                   continue;
                 }
-                if (ftype === 'RESPONSE') {
-                  inThinking = false;
-                  if (frag.content) {
-                    if (SEARCH_ANN.test(frag.content) && frag.content.length < 120) {
-                      sawSearchPhase = true;
-                      emitOpenAI({ content: frag.content });
-                    } else {
-                      sawResponseContent = true;
-                      responseChars += frag.content.length;
-                      emitOpenAI({ content: frag.content });
-                    }
-                  }
-                } else if (ftype === 'THINK' || ftype === 'REASONING') {
+                if (ftype === 'THINK' || ftype === 'REASONING') {
                   inThinking = true;
-                  if (frag.content) emitOpenAI({ reasoning_content: frag.content });
+                  if (frag.content) emitToken(frag.content, 'think');
+                } else if (ftype === 'RESPONSE') {
+                  sawResponseFragment = true;
+                  inThinking = false;
+                  if (frag.content) emitToken(frag.content, 'content');
+                } else if (frag.content) {
+                  emitToken(frag.content);
                 }
               }
             }
@@ -429,76 +467,77 @@ async function deepseekProxy(opts, res) {
             // APPEND array of fragment-like items
             if (evt.o === 'APPEND' && Array.isArray(evt.v)) {
               for (const item of evt.v) {
+                if (item && item.type) {
+                  // Sometimes APPEND includes full fragment objects with id/type/content
+                  if (item.id != null) noteFragType(String(item.id), item.type);
+                }
                 const itype = String(item.type || '').toUpperCase();
                 if (itype === 'SEARCH' || itype === 'SEARCH_RESULT' || itype === 'WEB_SEARCH') {
                   sawSearchPhase = true;
                   if (item.content) emitOpenAI({ content: item.content });
                   continue;
                 }
-                if (itype === 'RESPONSE') {
-                  inThinking = false;
-                  if (item.content) {
-                    if (SEARCH_ANN.test(item.content) && item.content.length < 120) {
-                      sawSearchPhase = true;
-                      emitOpenAI({ content: item.content });
-                    } else {
-                      sawResponseContent = true;
-                      responseChars += item.content.length;
-                      emitOpenAI({ content: item.content });
-                    }
-                  }
-                } else if (itype === 'THINK' || itype === 'REASONING') {
+                if (itype === 'THINK' || itype === 'REASONING') {
                   inThinking = true;
-                  if (item.content) emitOpenAI({ reasoning_content: item.content });
+                  if (item.content) emitToken(item.content, 'think');
+                } else if (itype === 'RESPONSE') {
+                  sawResponseFragment = true;
+                  inThinking = false;
+                  if (item.content) emitToken(item.content, 'content');
                 } else if (typeof item === 'string') {
-                  if (inThinking) emitOpenAI({ reasoning_content: item });
-                  else {
-                    if (SEARCH_ANN.test(item) && item.length < 120) sawSearchPhase = true;
-                    else { sawResponseContent = true; responseChars += item.length; }
-                    emitOpenAI({ content: item });
-                  }
+                  emitToken(item);
+                } else if (item && item.content) {
+                  emitToken(item.content);
                 }
               }
               continue;
             }
 
-            // Path-based APPEND / SET on content
+            // Path-based string tokens (critical: do NOT treat all /content paths as final answer)
             if (evt.p && typeof evt.v === 'string') {
-              const isThinkPath = /think|reasoning/i.test(evt.p);
               const isSearchPath = /search/i.test(evt.p);
-              const isContentPath = /\/content|fragments|RESPONSE/i.test(evt.p);
-              if (isSearchPath) {
+              const fragMatch = evt.p.match(/fragments\/(-?\d+)/i);
+              const fragIdx = fragMatch ? fragMatch[1] : null;
+              const knownType = fragIdx != null ? fragTypeByIndex[fragIdx] : null;
+              const isThinkPath =
+                /think|reasoning/i.test(evt.p)
+                || knownType === 'THINK'
+                || knownType === 'REASONING';
+              const isResponsePath =
+                knownType === 'RESPONSE'
+                || /fragments\/-?\d+\/content/i.test(evt.p) && knownType === 'RESPONSE'
+                || (/RESPONSE/i.test(evt.p) && !/think/i.test(evt.p));
+
+              if (isSearchPath || knownType === 'SEARCH') {
                 sawSearchPhase = true;
                 emitOpenAI({ content: evt.v });
-              } else if (isThinkPath && !/RESPONSE/i.test(evt.p)) {
+              } else if (isThinkPath || (inThinking && !sawResponseFragment && !isResponsePath)) {
+                // Still in chain-of-thought
                 inThinking = true;
-                emitOpenAI({ reasoning_content: evt.v });
-              } else if (isContentPath || (!/think|status|token/i.test(evt.p))) {
+                emitToken(evt.v, 'think');
+              } else if (isResponsePath || sawResponseFragment) {
+                sawResponseFragment = true;
                 inThinking = false;
-                if (SEARCH_ANN.test(evt.v) && evt.v.length < 120) {
-                  sawSearchPhase = true;
-                  emitOpenAI({ content: evt.v });
-                } else {
-                  sawResponseContent = true;
-                  responseChars += evt.v.length;
-                  emitOpenAI({ content: evt.v });
-                }
+                emitToken(evt.v, 'content');
+              } else if (/status|token|title|session/i.test(evt.p)) {
+                // ignore metadata paths
+              } else if (isExpert && !sawResponseFragment) {
+                // thinking-enabled models: default unknown tokens to reasoning until RESPONSE starts
+                emitToken(evt.v, 'think');
+              } else {
+                emitToken(evt.v, 'content');
               }
               continue;
             }
 
-            // Bare string token
+            // Bare string token (no path)
             if (typeof evt.v === 'string' && !evt.p && !evt.o) {
-              if (inThinking) emitOpenAI({ reasoning_content: evt.v });
-              else {
-                if (SEARCH_ANN.test(evt.v) && evt.v.length < 120) sawSearchPhase = true;
-                else { sawResponseContent = true; responseChars += evt.v.length; }
-                emitOpenAI({ content: evt.v });
-              }
+              if (isExpert && !sawResponseFragment) emitToken(evt.v, 'think');
+              else emitToken(evt.v);
               continue;
             }
 
-            // status SET FINISHED — ignore intermediate finish after search tool announce
+            // status SET FINISHED
             if (evt.p && /status$/i.test(evt.p) && (evt.v === 'FINISHED' || evt.v === 'CONTENT_FILTER')) {
               if ((searchEnabled || wantSearch) && sawSearchPhase && !sawResponseContent && responseChars < 60) {
                 console.log('[deepseek] ignore early FINISHED during search; waiting for answer');
