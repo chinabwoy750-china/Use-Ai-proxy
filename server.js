@@ -62,9 +62,9 @@ const server = http.createServer(async (req, res) => {
         JSON.stringify({
           ok: true,
           deepseek: !!(process.env.DEEPSEEK_COOKIE && process.env.DEEPSEEK_TOKEN),
-          kimi: !!(process.env.KIMI_TOKEN || process.env.KIMI_REFRESH_TOKEN),
-          huggingface: !!(process.env.HF_CHAT_COOKIE || process.env.HF_COOKIE),
-          mistral: !!(process.env.MISTRAL_API_KEY || process.env.MISTRAL_COOKIE || process.env.MISTRAL_COOKIE_HEADER),
+          kimi: !!(process.env.KIMI_TOKEN || process.env.KIMI_REFRESH_TOKEN || process.env.KIMI_REFRESH_TOKENS),
+          huggingface: !!(process.env.HF_CHAT_COOKIE || process.env.HF_COOKIE || process.env.HF_COOKIES),
+          mistral: !!(process.env.MISTRAL_API_KEY || process.env.MISTRAL_API_KEYS || process.env.MISTRAL_COOKIE || process.env.MISTRAL_COOKIE_HEADER || process.env.MISTRAL_COOKIES),
         })
       );
     }

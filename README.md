@@ -69,3 +69,17 @@ Cookie helper (on https://chat.mistral.ai, logged in):
   try { copy(val); } catch (_) {}
 })();
 ```
+
+
+## Multi-credential pools (rotation)
+
+Use comma-separated lists. On HTTP **429**, that credential cools for ~60s and the next is tried.
+
+| Env | Meaning |
+|-----|---------|
+| `KIMI_REFRESH_TOKENS` | `rt1,rt2,rt3` refresh tokens |
+| `HF_COOKIES` | `cookie1,cookie2` hf-chat values |
+| `MISTRAL_API_KEYS` | `key1,key2` official API keys |
+| `MISTRAL_COOKIES` | web session cookies |
+
+Single-credential env vars still work.
