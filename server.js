@@ -9,24 +9,37 @@ process.on('unhandledRejection', (err) => {
 });
 
 function load(name) {
-  try { return require(name); } catch (e) {
+  try {
+    return require(name);
+  } catch (e) {
     console.error(`[load] ${name}:`, e.message);
     return null;
   }
 }
 
 const deepseekProxy = load('./deepseek-proxy');
-const qwenProxy = load('./qwen-proxy');
 const kimiProxy = load('./kimi-proxy');
-const zaiProxy = load('./zai-proxy');
+const huggingfaceProxy = load('./huggingface-proxy');
 
 const PORT = process.env.PORT || 3000;
 
 function routeProxy(model) {
   const m = String(model || '').toLowerCase();
-  if (m.startsWith('qwen') && qwenProxy) return qwenProxy;
   if ((m.startsWith('kimi') || m.startsWith('moonshot')) && kimiProxy) return kimiProxy;
-  if ((m.startsWith('glm') || m.startsWith('zai') || m === 'chatglm') && zaiProxy) return zaiProxy;
+  if (
+    (m.startsWith('hf') ||
+      m.startsWith('huggingface') ||
+      m === 'omni' ||
+      m.includes('/') ||
+      m.startsWith('hf-')) &&
+    huggingfaceProxy
+  ) {
+    // full model ids with / go to HF when configured
+    if (m.includes('/') && !m.startsWith('hf')) return huggingfaceProxy;
+    if (m.startsWith('hf') || m.startsWith('huggingface') || m === 'omni') return huggingfaceProxy;
+  }
+  if ((m.startsWith('hf') || m === 'omni' || m.startsWith('huggingface')) && huggingfaceProxy)
+    return huggingfaceProxy;
   return deepseekProxy;
 }
 
@@ -43,27 +56,27 @@ const server = http.createServer(async (req, res) => {
 
     if (req.url === '/health' || req.url === '/') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({
-        ok: true,
-        deepseek: !!(process.env.DEEPSEEK_COOKIE && process.env.DEEPSEEK_TOKEN),
-        qwen: !!(process.env.QWEN_TOKEN || process.env.QWEN_COOKIE),
-        kimi: !!(process.env.KIMI_TOKEN || process.env.KIMI_REFRESH_TOKEN),
-        zai: !!process.env.ZAI_TOKEN,
-      }));
+      return res.end(
+        JSON.stringify({
+          ok: true,
+          deepseek: !!(process.env.DEEPSEEK_COOKIE && process.env.DEEPSEEK_TOKEN),
+          kimi: !!(process.env.KIMI_TOKEN || process.env.KIMI_REFRESH_TOKEN),
+          huggingface: !!(process.env.HF_CHAT_COOKIE || process.env.HF_COOKIE),
+        })
+      );
     }
 
     if (req.url === '/v1/models' && req.method === 'GET') {
       const models = [];
       const add = (mod, owner) => {
         if (!mod) return;
-        for (const m of (mod.MODELS || [])) {
+        for (const m of mod.MODELS || []) {
           models.push({ id: m.slug, object: 'model', created: 0, owned_by: owner });
         }
       };
       add(deepseekProxy, 'deepseek');
-      add(qwenProxy, 'qwen');
       add(kimiProxy, 'kimi');
-      add(zaiProxy, 'zai');
+      add(huggingfaceProxy, 'huggingface');
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ object: 'list', data: models }));
     }
@@ -72,8 +85,9 @@ const server = http.createServer(async (req, res) => {
       let body = '';
       for await (const chunk of req) body += chunk;
       let opts;
-      try { opts = JSON.parse(body); }
-      catch {
+      try {
+        opts = JSON.parse(body);
+      } catch {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({ error: 'bad json' }));
       }
@@ -96,4 +110,6 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`proxy on ${PORT} (deepseek / qwen / kimi / zai)`));
+server.listen(PORT, () =>
+  console.log(`proxy on ${PORT} (deepseek / kimi / huggingface)`)
+);
