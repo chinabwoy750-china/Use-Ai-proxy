@@ -5,6 +5,7 @@ OpenAI-compatible multi-upstream proxy:
 - **DeepSeek** — `chat.deepseek.com` (cookie + token + PoW)
 - **Kimi** — `www.kimi.ai` (access / refresh token)
 - **HuggingFace Chat** — `huggingface.co/chat` (`hf-chat` cookie)
+- **Mistral Le Chat** — `chat.mistral.ai` (cookie) or official `MISTRAL_API_KEY`
 
 ## Endpoints
 
@@ -51,3 +52,20 @@ copy(document.cookie.split(';').map(s=>s.trim()).find(s=>s.startsWith('hf-chat='
 ```
 
 Then set `HF_CHAT_COOKIE` to that value.
+
+
+### Mistral
+- `MISTRAL_COOKIE` or `MISTRAL_COOKIE_HEADER` — `mistral-chat-session` from chat.mistral.ai (web)
+- `MISTRAL_API_KEY` — optional official API (preferred on Render; avoids Cloudflare)
+- Models: `mistral`, `mistral-large`, `mistral-small`, `codestral`
+
+Cookie helper (on https://chat.mistral.ai, logged in):
+
+```js
+(function () {
+  const raw = document.cookie.split(';').map(s => s.trim()).find(s => s.startsWith('mistral-chat-session='));
+  const val = raw ? raw.slice('mistral-chat-session='.length) : document.cookie;
+  console.log(val);
+  try { copy(val); } catch (_) {}
+})();
+```

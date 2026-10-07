@@ -20,12 +20,14 @@ function load(name) {
 const deepseekProxy = load('./deepseek-proxy');
 const kimiProxy = load('./kimi-proxy');
 const huggingfaceProxy = load('./huggingface-proxy');
+const mistralProxy = load('./mistral-proxy');
 
 const PORT = process.env.PORT || 3000;
 
 function routeProxy(model) {
   const m = String(model || '').toLowerCase();
   if ((m.startsWith('kimi') || m.startsWith('moonshot')) && kimiProxy) return kimiProxy;
+  if ((m.startsWith('mistral') || m.startsWith('codestral')) && mistralProxy) return mistralProxy;
   if (
     (m.startsWith('hf') ||
       m.startsWith('huggingface') ||
@@ -62,6 +64,7 @@ const server = http.createServer(async (req, res) => {
           deepseek: !!(process.env.DEEPSEEK_COOKIE && process.env.DEEPSEEK_TOKEN),
           kimi: !!(process.env.KIMI_TOKEN || process.env.KIMI_REFRESH_TOKEN),
           huggingface: !!(process.env.HF_CHAT_COOKIE || process.env.HF_COOKIE),
+          mistral: !!(process.env.MISTRAL_API_KEY || process.env.MISTRAL_COOKIE || process.env.MISTRAL_COOKIE_HEADER),
         })
       );
     }
@@ -77,6 +80,7 @@ const server = http.createServer(async (req, res) => {
       add(deepseekProxy, 'deepseek');
       add(kimiProxy, 'kimi');
       add(huggingfaceProxy, 'huggingface');
+      add(mistralProxy, 'mistral');
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ object: 'list', data: models }));
     }
@@ -111,5 +115,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () =>
-  console.log(`proxy on ${PORT} (deepseek / kimi / huggingface)`)
+  console.log(`proxy on ${PORT} (deepseek / kimi / huggingface / mistral)`)
 );
