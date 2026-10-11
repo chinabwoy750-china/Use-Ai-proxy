@@ -1,29 +1,35 @@
 'use strict';
 /**
- * Mistral Le Chat web proxy (chat.mistral.ai)
+ * Mistral — API key pool (recommended) + optional web cookie pool
  *
  * Env:
- *   MISTRAL_COOKIE / MISTRAL_COOKIE_HEADER  — full Cookie header or mistral-chat-session value
- *   MISTRAL_URL   — default https://chat.mistral.ai
- *   MISTRAL_API_KEY — optional; if set, uses official api.mistral.ai instead of web (more reliable on servers)
+ *   MISTRAL_API_KEYS = "key1,key2,key3"
+ *   MISTRAL_API_KEY  = single key (legacy)
+ *   MISTRAL_COOKIES  = "cookie1|||cookie2"  (web; often CF-blocked on Render)
+ *   MISTRAL_COOKIE / MISTRAL_COOKIE_HEADER
+ *   MISTRAL_URL, MISTRAL_API_URL
  */
 const crypto = require('crypto');
 
 const WEB_BASE = (process.env.MISTRAL_URL || 'https://chat.mistral.ai').replace(/\/$/, '');
 const API_BASE = (process.env.MISTRAL_API_URL || 'https://api.mistral.ai').replace(/\/$/, '');
-const API_KEY = (process.env.MISTRAL_API_KEY || '').trim();
-const ENV_COOKIE = (process.env.MISTRAL_COOKIE_HEADER || process.env.MISTRAL_COOKIE || '').trim();
 
-const KEY_POOL = (process.env.MISTRAL_API_KEYS || API_KEY || '')
+const KEY_POOL = (process.env.MISTRAL_API_KEYS || process.env.MISTRAL_API_KEY || '')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
-const COOKIE_POOL = (process.env.MISTRAL_COOKIES || ENV_COOKIE || '')
-  .split(',')
+const COOKIE_POOL = (
+  process.env.MISTRAL_COOKIES ||
+  process.env.MISTRAL_COOKIE_HEADER ||
+  process.env.MISTRAL_COOKIE ||
+  ''
+)
+  .split('|||')
   .map((s) => s.trim())
   .filter(Boolean);
-let keyRr = 0;
-let cookieRr = 0;
+
+let keyIdx = 0;
+let cookieIdx = 0;
 const keyCool = new Map();
 const cookieCool = new Map();
 
@@ -31,30 +37,39 @@ function pickKey() {
   if (!KEY_POOL.length) return '';
   const now = Date.now();
   for (let i = 0; i < KEY_POOL.length; i++) {
-    const k = KEY_POOL[(keyRr + i) % KEY_POOL.length];
+    const k = KEY_POOL[(keyIdx + i) % KEY_POOL.length];
     if ((keyCool.get(k) || 0) > now) continue;
-    keyRr = (keyRr + i + 1) % KEY_POOL.length;
+    keyIdx = (keyIdx + i + 1) % KEY_POOL.length;
     return k;
   }
-  return KEY_POOL[keyRr++ % KEY_POOL.length];
+  return KEY_POOL[keyIdx++ % KEY_POOL.length];
 }
 function coolKey(k, ms = 60_000) {
   if (k) keyCool.set(k, Date.now() + ms);
 }
-function pickMistralCookie() {
+function pickCookie() {
   if (!COOKIE_POOL.length) return '';
   const now = Date.now();
   for (let i = 0; i < COOKIE_POOL.length; i++) {
-    const c = COOKIE_POOL[(cookieRr + i) % COOKIE_POOL.length];
+    const c = COOKIE_POOL[(cookieIdx + i) % COOKIE_POOL.length];
     if ((cookieCool.get(c) || 0) > now) continue;
-    cookieRr = (cookieRr + i + 1) % COOKIE_POOL.length;
+    cookieIdx = (cookieIdx + i + 1) % COOKIE_POOL.length;
     return c;
   }
-  return COOKIE_POOL[cookieRr++ % COOKIE_POOL.length];
+  return COOKIE_POOL[cookieIdx++ % COOKIE_POOL.length];
 }
-function coolMistralCookie(c, ms = 60_000) {
+function coolCookie(c, ms = 60_000) {
   if (c) cookieCool.set(c, Date.now() + ms);
 }
+
+console.log(
+  '[mistral] mode:',
+  KEY_POOL.length
+    ? `API key pool (${KEY_POOL.length})`
+    : COOKIE_POOL.length
+      ? `web cookie pool (${COOKIE_POOL.length})`
+      : 'unconfigured'
+);
 
 const MODELS = [
   { slug: 'mistral', label: 'Mistral (default large)' },
@@ -82,13 +97,12 @@ function resolveModel(name) {
 }
 
 function cookieHeader(raw) {
-  const c = (raw != null ? raw : pickMistralCookie()) || '';
-  if (!c) return '';
-  if (/mistral-chat-session\s*=/i.test(c) || c.includes(';')) return c;
-  return `mistral-chat-session=${c}`;
+  if (!raw) return '';
+  if (/mistral-chat-session\s*=/i.test(raw) || raw.includes(';')) return raw;
+  return `mistral-chat-session=${raw}`;
 }
 
-function webHeaders(cookieRaw, extra = {}) {
+function webHeaders(cookie, extra = {}) {
   return {
     'User-Agent':
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
@@ -96,7 +110,7 @@ function webHeaders(cookieRaw, extra = {}) {
     'Accept-Language': 'en-US,en;q=0.9',
     Origin: WEB_BASE,
     Referer: `${WEB_BASE}/chat`,
-    Cookie: cookieHeader(cookieRaw),
+    Cookie: cookieHeader(cookie),
     ...extra,
   };
 }
@@ -137,32 +151,55 @@ function toMessages(messages) {
   });
 }
 
-async function streamOfficial(opts, res, model, openaiId, mk, safeWrite, apiKey) {
-  const key = apiKey || pickKey() || API_KEY;
-  const upstream = await fetch(`${API_BASE}/v1/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-    },
-    body: JSON.stringify({
-      model,
-      messages: toMessages(opts.messages),
-      stream: true,
-      temperature: opts.temperature,
-    }),
-  });
-  if (upstream.status === 429) {
-    coolKey(key, 60_000);
-    const err = new Error('Mistral API 429');
-    err.status = 429;
-    throw err;
+async function streamOfficial(opts, res, model, openaiId, mk, safeWrite) {
+  const maxAttempts = Math.max(KEY_POOL.length, 1);
+  let upstream = null;
+  let lastErr = null;
+  const tried = new Set();
+
+  for (let attempt = 0; attempt < maxAttempts + 1; attempt++) {
+    const key = pickKey();
+    if (!key || tried.has(key)) {
+      if (tried.size >= KEY_POOL.length) break;
+      continue;
+    }
+    tried.add(key);
+    try {
+      upstream = await fetch(`${API_BASE}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+        },
+        body: JSON.stringify({
+          model,
+          messages: toMessages(opts.messages),
+          stream: true,
+          temperature: opts.temperature,
+        }),
+      });
+      if (upstream.status === 429 || upstream.status === 401) {
+        coolKey(key, 60_000);
+        lastErr = new Error(`Mistral API ${upstream.status} — rotating key`);
+        upstream = null;
+        continue;
+      }
+      if (!upstream.ok) {
+        const t = await upstream.text().catch(() => '');
+        lastErr = new Error(`Mistral API ${upstream.status}: ${t.slice(0, 280)}`);
+        upstream = null;
+        continue;
+      }
+      lastErr = null;
+      break;
+    } catch (e) {
+      lastErr = e;
+      upstream = null;
+    }
   }
-  if (!upstream.ok) {
-    const t = await upstream.text().catch(() => '');
-    throw new Error(`Mistral API ${upstream.status}: ${t.slice(0, 280)}`);
-  }
+  if (!upstream) throw lastErr || new Error('All Mistral API keys failed / rate limited');
+
   const reader = upstream.body.getReader();
   const dec = new TextDecoder();
   let buf = '';
@@ -193,19 +230,19 @@ async function streamOfficial(opts, res, model, openaiId, mk, safeWrite, apiKey)
   }
 }
 
-async function createWebConversation(model, sys, cookieRaw) {
+async function createWebConversation(cookie, model, sys) {
   const payload = { model };
   if (sys) payload.systemPrompt = sys;
   const r = await fetch(`${WEB_BASE}/api/chat/new`, {
     method: 'POST',
-    headers: webHeaders(cookieRaw, { 'Content-Type': 'application/json', Accept: 'application/json' }),
+    headers: webHeaders(cookie, { 'Content-Type': 'application/json', Accept: 'application/json' }),
     body: JSON.stringify(payload),
   });
   const t = await r.text();
-  if (r.status === 429) {
-    coolMistralCookie(cookieRaw, 60_000);
-    const err = new Error('Mistral web 429');
-    err.status = 429;
+  if (r.status === 429 || r.status === 401) {
+    coolCookie(cookie, 60_000);
+    const err = new Error(`Mistral web new ${r.status}`);
+    err.status = r.status;
     throw err;
   }
   if (!r.ok) throw new Error(`Mistral web new chat ${r.status}: ${t.slice(0, 220)}`);
@@ -220,36 +257,53 @@ async function createWebConversation(model, sys, cookieRaw) {
   return id;
 }
 
-async function streamWeb(opts, res, model, openaiId, mk, safeWrite, cookieRaw) {
-  const cookie = cookieRaw || pickMistralCookie();
-  const sys = systemPrompt(opts.messages);
-  const message = lastUser(opts.messages);
-  const conversationId = opts.conversation_id || (await createWebConversation(model, sys, cookie));
+async function streamWeb(opts, res, model, openaiId, mk, safeWrite) {
+  const maxAttempts = Math.max(COOKIE_POOL.length, 1);
+  let upstream = null;
+  let lastErr = null;
+  const tried = new Set();
 
-  const upstream = await fetch(`${WEB_BASE}/api/chat`, {
-    method: 'POST',
-    headers: webHeaders(cookie, {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-      Referer: `${WEB_BASE}/chat/${conversationId}`,
-    }),
-    body: JSON.stringify({
-      conversationId,
-      message,
-      model,
-    }),
-  });
-
-  if (upstream.status === 429) {
-    coolMistralCookie(cookie, 60_000);
-    const err = new Error('Mistral web chat 429');
-    err.status = 429;
-    throw err;
+  for (let attempt = 0; attempt < maxAttempts + 1; attempt++) {
+    const cookie = pickCookie();
+    if (!cookie || tried.has(cookie)) {
+      if (tried.size >= COOKIE_POOL.length) break;
+      continue;
+    }
+    tried.add(cookie);
+    try {
+      const sys = systemPrompt(opts.messages);
+      const message = lastUser(opts.messages);
+      const conversationId = await createWebConversation(cookie, model, sys);
+      upstream = await fetch(`${WEB_BASE}/api/chat`, {
+        method: 'POST',
+        headers: webHeaders(cookie, {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          Referer: `${WEB_BASE}/chat/${conversationId}`,
+        }),
+        body: JSON.stringify({ conversationId, message, model }),
+      });
+      if (upstream.status === 429 || upstream.status === 401) {
+        coolCookie(cookie, 60_000);
+        lastErr = new Error(`Mistral web ${upstream.status} — rotating cookie`);
+        upstream = null;
+        continue;
+      }
+      if (!upstream.ok) {
+        const t = await upstream.text().catch(() => '');
+        lastErr = new Error(`Mistral web chat ${upstream.status}: ${t.slice(0, 280)}`);
+        upstream = null;
+        continue;
+      }
+      lastErr = null;
+      break;
+    } catch (e) {
+      lastErr = e;
+      upstream = null;
+      if (e.status === 429 || e.status === 401) continue;
+    }
   }
-  if (!upstream.ok) {
-    const t = await upstream.text().catch(() => '');
-    throw new Error(`Mistral web chat ${upstream.status}: ${t.slice(0, 280)}`);
-  }
+  if (!upstream) throw lastErr || new Error('All Mistral cookies failed / rate limited');
 
   const reader = upstream.body.getReader();
   const dec = new TextDecoder();
@@ -272,15 +326,10 @@ async function streamWeb(opts, res, model, openaiId, mk, safeWrite, cookieRaw) {
           for (const choice of choices) {
             const delta = choice.delta || {};
             if (delta.content) safeWrite(`data: ${mk({ content: delta.content })}\n\n`);
-            if (choice.finish_reason === 'stop') {
-              /* end handled after stream */
-            }
           }
         } else {
           const content = obj.content || obj.text || '';
-          if (content && typeof content === 'string') {
-            safeWrite(`data: ${mk({ content })}\n\n`);
-          }
+          if (content && typeof content === 'string') safeWrite(`data: ${mk({ content })}\n\n`);
         }
       } catch {}
     }
@@ -294,8 +343,7 @@ module.exports = async function mistralProxy(opts, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     return res.end(
       JSON.stringify({
-        error:
-          'Set MISTRAL_API_KEY / MISTRAL_API_KEYS or MISTRAL_COOKIE / MISTRAL_COOKIES',
+        error: 'Set MISTRAL_API_KEYS (comma-separated) or MISTRAL_COOKIES (||| separated)',
       })
     );
   }
@@ -326,49 +374,8 @@ module.exports = async function mistralProxy(opts, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     safeWrite(`data: ${mk({ role: 'assistant', content: '' })}\n\n`);
 
-    // Prefer official API keys on servers (avoids Cloudflare on chat.mistral.ai)
-    let lastErr = null;
-    if (KEY_POOL.length) {
-      const tried = new Set();
-      for (let i = 0; i < KEY_POOL.length + 1; i++) {
-        const key = pickKey();
-        if (!key || tried.has(key)) {
-          if (tried.size >= KEY_POOL.length) break;
-          continue;
-        }
-        tried.add(key);
-        try {
-          await streamOfficial(opts, res, model, openaiId, mk, safeWrite, key);
-          lastErr = null;
-          break;
-        } catch (e) {
-          lastErr = e;
-          if (e.status === 429) continue;
-          if (i + 1 < KEY_POOL.length) continue;
-        }
-      }
-      if (lastErr) throw lastErr;
-    } else {
-      const tried = new Set();
-      for (let i = 0; i < COOKIE_POOL.length + 1; i++) {
-        const cookie = pickMistralCookie();
-        if (!cookie || tried.has(cookie)) {
-          if (tried.size >= COOKIE_POOL.length) break;
-          continue;
-        }
-        tried.add(cookie);
-        try {
-          await streamWeb(opts, res, model, openaiId, mk, safeWrite, cookie);
-          lastErr = null;
-          break;
-        } catch (e) {
-          lastErr = e;
-          if (e.status === 429) continue;
-          if (i + 1 < COOKIE_POOL.length) continue;
-        }
-      }
-      if (lastErr) throw lastErr;
-    }
+    if (KEY_POOL.length) await streamOfficial(opts, res, model, openaiId, mk, safeWrite);
+    else await streamWeb(opts, res, model, openaiId, mk, safeWrite);
 
     safeWrite(`data: ${mk({}, 'stop')}\n\n`);
     safeWrite('data: [DONE]\n\n');
@@ -392,4 +399,4 @@ module.exports = async function mistralProxy(opts, res) {
 };
 
 module.exports.MODELS = MODELS;
-module.exports.isConfigured = () => KEY_POOL.length > 0 || COOKIE_POOL.length > 0;
+module.exports.isConfigured = () => !!(KEY_POOL.length || COOKIE_POOL.length);

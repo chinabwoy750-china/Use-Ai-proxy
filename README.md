@@ -83,3 +83,10 @@ Use comma-separated lists. On HTTP **429**, that credential cools for ~60s and t
 | `MISTRAL_COOKIES` | web session cookies |
 
 Single-credential env vars still work.
+
+
+### Cookie / key separators
+
+- **HF / Mistral cookies:** separate accounts with `|||` (cookies often contain commas).
+- **Mistral API keys / Kimi refresh tokens:** comma-separated lists are fine.
+- **DeepSeek:** keep `token|cookie` lines or `TOKEN,TOKEN` + `COOKIE|||COOKIE` — no email/password auto-login (unreliable on Render).
