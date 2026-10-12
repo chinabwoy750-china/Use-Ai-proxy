@@ -8,6 +8,9 @@
  *   MISTRAL_COOKIES  = "cookie1|||cookie2"  (web; often CF-blocked on Render)
  *   MISTRAL_COOKIE / MISTRAL_COOKIE_HEADER
  *   MISTRAL_URL, MISTRAL_API_URL
+ *   MISTRAL_DEFAULT_MODEL — default codestral-latest (free tier)
+ *
+ * Free tier: use model "codestral". Large/Small need a paid Mistral plan.
  */
 const crypto = require('crypto');
 
@@ -71,29 +74,39 @@ console.log(
       : 'unconfigured'
 );
 
+// Free tier: Codestral is the usable model; large/small need paid plan.
+const FREE_DEFAULT = process.env.MISTRAL_DEFAULT_MODEL || 'codestral-latest';
+
 const MODELS = [
-  { slug: 'mistral', label: 'Mistral (default large)' },
-  { slug: 'mistral-large', label: 'Mistral Large' },
-  { slug: 'mistral-small', label: 'Mistral Small' },
-  { slug: 'codestral', label: 'Codestral' },
-  { slug: 'mistral-large-latest', label: 'mistral-large-latest' },
-  { slug: 'mistral-small-latest', label: 'mistral-small-latest' },
+  { slug: 'codestral', label: 'Codestral (free-tier default)' },
   { slug: 'codestral-latest', label: 'codestral-latest' },
+  { slug: 'mistral', label: 'Alias → Codestral on free tier' },
+  { slug: 'mistral-large', label: 'Mistral Large (paid)' },
+  { slug: 'mistral-small', label: 'Mistral Small (paid)' },
+  { slug: 'mistral-large-latest', label: 'mistral-large-latest (paid)' },
+  { slug: 'mistral-small-latest', label: 'mistral-small-latest (paid)' },
 ];
 
 const MODEL_MAP = {
-  mistral: 'mistral-large-latest',
+  // Free-friendly aliases
+  mistral: FREE_DEFAULT,
+  codestral: 'codestral-latest',
+  'codestral-latest': 'codestral-latest',
+  // Explicit paid IDs pass through
   'mistral-large': 'mistral-large-latest',
   'mistral-small': 'mistral-small-latest',
-  codestral: 'codestral-latest',
   'mistral-large-latest': 'mistral-large-latest',
   'mistral-small-latest': 'mistral-small-latest',
-  'codestral-latest': 'codestral-latest',
 };
 
 function resolveModel(name) {
-  const n = String(name || 'mistral').toLowerCase();
-  return MODEL_MAP[n] || name || 'mistral-large-latest';
+  const n = String(name || 'codestral').toLowerCase();
+  if (MODEL_MAP[n]) return MODEL_MAP[n];
+  // Unknown mistral-* without paid plan → Codestral
+  if (n.startsWith('mistral') && !n.includes('large') && !n.includes('small')) {
+    return FREE_DEFAULT;
+  }
+  return name || FREE_DEFAULT;
 }
 
 function cookieHeader(raw) {
@@ -348,7 +361,7 @@ module.exports = async function mistralProxy(opts, res) {
     );
   }
 
-  const modelIn = opts.model || 'mistral';
+  const modelIn = opts.model || 'codestral';
   const model = resolveModel(modelIn);
   const openaiId = 'chatcmpl-' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
   const mk = (delta, finish = null) =>

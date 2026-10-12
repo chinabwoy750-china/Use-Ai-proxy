@@ -90,3 +90,9 @@ Single-credential env vars still work.
 - **HF / Mistral cookies:** separate accounts with `|||` (cookies often contain commas).
 - **Mistral API keys / Kimi refresh tokens:** comma-separated lists are fine.
 - **DeepSeek:** keep `token|cookie` lines or `TOKEN,TOKEN` + `COOKIE|||COOKIE` — no email/password auto-login (unreliable on Render).
+
+
+### Mistral free tier
+- Use model **`codestral`** / **`codestral-latest`** (works on free API keys).
+- **`mistral`**, **`mistral-large`**, **`mistral-small`** usually require a **paid** plan.
+- Override default with `MISTRAL_DEFAULT_MODEL` if needed.
