@@ -147,10 +147,16 @@ function buildPrompt(system_prompt, history, message) {
 }
 
 async function deepseekProxy(opts, res) {
-  const isExpert = opts.model === 'deepseek-expert'
-    || opts.model === 'deepseek-reasoner'
-    || opts.model === 'deepseek-r1'
-    || opts.model === 'deepseek'
+  // Only real reasoner IDs / explicit thinking flag — NOT plain "deepseek"/"deepseek-chat"
+  // (that mapped every reply into reasoning_content and left content empty for clients).
+  const modelName = String(opts.model || 'deepseek').toLowerCase();
+  const isExpert =
+    modelName === 'deepseek-expert'
+    || modelName === 'deepseek-reasoner'
+    || modelName === 'deepseek-r1'
+    || modelName.includes('reasoner')
+    || modelName.includes('r1')
+    || modelName.includes('expert')
     || opts.thinking === true
     || (opts.thinking && opts.thinking.type === 'enabled');
 
@@ -273,10 +279,10 @@ async function deepseekProxy(opts, res) {
       body: JSON.stringify({
         chat_session_id: activeSessionId,
         parent_message_id: opts.parent_message_id || null,
-        model_type: isExpert ? 'expert' : null,
+        model_type: isExpert ? 'expert' : 'default',
         prompt,
         ref_file_ids: [],
-        thinking_enabled: !!isExpert || !!wantSearch,
+        thinking_enabled: !!isExpert,
         search_enabled: searchEnabled,
         action: null,
         preempt: false,
@@ -517,30 +523,33 @@ async function deepseekProxy(opts, res) {
               const fragMatch = evt.p.match(/fragments\/(-?\d+)/i);
               const fragIdx = fragMatch ? fragMatch[1] : null;
               const knownType = fragIdx != null ? fragTypeByIndex[fragIdx] : null;
+              const isContentPath = /fragments\/-?\d+\/content/i.test(evt.p);
               const isThinkPath =
-                /think|reasoning/i.test(evt.p)
-                || knownType === 'THINK'
-                || knownType === 'REASONING';
+                knownType === 'THINK'
+                || knownType === 'REASONING'
+                || (/think|reasoning/i.test(evt.p) && !isContentPath);
               const isResponsePath =
                 knownType === 'RESPONSE'
-                || /fragments\/-?\d+\/content/i.test(evt.p) && knownType === 'RESPONSE'
-                || (/RESPONSE/i.test(evt.p) && !/think/i.test(evt.p));
+                || knownType === 'TEMPLATE_RESPONSE'
+                || (/RESPONSE/i.test(evt.p) && !/think/i.test(evt.p))
+                || (isContentPath && knownType !== 'THINK' && knownType !== 'REASONING'
+                    && knownType !== 'SEARCH' && knownType !== 'TOOL_SEARCH'
+                    && knownType !== 'TOOL_OPEN');
 
-              if (isSearchPath || knownType === 'SEARCH') {
+              if (isSearchPath || knownType === 'SEARCH' || knownType === 'TOOL_SEARCH') {
                 sawSearchPhase = true;
-                emitOpenAI({ content: evt.v });
-              } else if (isThinkPath || (inThinking && !sawResponseFragment && !isResponsePath)) {
-                // Still in chain-of-thought
-                inThinking = true;
-                emitToken(evt.v, 'think');
-              } else if (isResponsePath || sawResponseFragment) {
+                // Don't treat tool/search meta as final answer
+                continue;
+              } else if (isResponsePath || (isContentPath && (!isExpert || sawResponseFragment || !inThinking))) {
                 sawResponseFragment = true;
                 inThinking = false;
                 emitToken(evt.v, 'content');
-              } else if (/status|token|title|session/i.test(evt.p)) {
+              } else if (isThinkPath || (isExpert && inThinking && !sawResponseFragment)) {
+                inThinking = true;
+                emitToken(evt.v, 'think');
+              } else if (/status|token|title|session|elapsed/i.test(evt.p)) {
                 // ignore metadata paths
               } else if (isExpert && !sawResponseFragment) {
-                // thinking-enabled models: default unknown tokens to reasoning until RESPONSE starts
                 emitToken(evt.v, 'think');
               } else {
                 emitToken(evt.v, 'content');
@@ -575,16 +584,20 @@ async function deepseekProxy(opts, res) {
     }
     clearTimeout(idleTimer);
     res.removeListener?.('close', onClientClose);
+    console.log(
+      '[deepseek] stream complete model=%s expert=%s contentChars=%s search=%s timedOut=%s',
+      opts.model, isExpert, responseChars, !!(searchEnabled || sawSearchPhase), timedOut
+    );
     if (!res.writableEnded) {
-      // Reader ended / timed out without a normal FINISHED path
       if (!streamDone || timedOut) {
         if ((searchEnabled || wantSearch || sawSearchPhase) && !sawResponseContent) {
           emitOpenAI({
             content: '\n\n[Error: DeepSeek closed before final answer after search]',
           });
-          console.log('[deepseek] stream end empty after search timedOut=%s', timedOut);
-        } else if (!sawResponseContent && responseChars < 1 && !timedOut) {
-          // Quiet empty end — still send stop so clients don't hang
+        } else if (!sawResponseContent && responseChars < 1) {
+          emitOpenAI({
+            content: '\n\n[Error: DeepSeek stream closed with empty reply]',
+          });
         }
         emitOpenAI({}, 'stop');
         safeWrite('data: [DONE]\n\n');
