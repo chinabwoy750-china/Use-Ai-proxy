@@ -242,15 +242,25 @@ async function deepseekProxy(opts, res) {
     );
 
     const prompt = buildPrompt(system_prompt, history, message);
+    // Client-supplied OpenAI tools → do NOT also force DeepSeek built-in web search
+    const hasClientTools = Array.isArray(opts.tools) && opts.tools.length > 0;
     const wantSearch =
       opts.search_enabled === true
       || /search/i.test(String(opts.model || ''))
       || /\b(web\s*search|search the web|do a (web )?search|google|look up|find online|list .{0,40} websites?)\b/i.test(
         message || ''
       );
-    // Default on for deepseek chat unless explicitly disabled
-    const searchEnabled = opts.search_enabled === false ? false : true;
-    const idleMs = searchEnabled || wantSearch ? 180000 : 90000;
+    // Only enable DS search when explicitly requested / model says search / prompt asks —
+    // never default-on (that caused early FINISHED + "closed before final answer after search").
+    // When client sends tools[], leave search off so the client drives tool_calls.
+    const searchEnabled =
+      hasClientTools
+        ? false
+        : opts.search_enabled === false
+          ? false
+          : !!(wantSearch || opts.search_enabled === true);
+    // Post-search generation can be slow; keep idle generous
+    const idleMs = searchEnabled || wantSearch ? 240000 : 120000;
 
     abortCtrl = new AbortController();
     res.on?.('close', onClientClose);
@@ -386,8 +396,15 @@ async function deepseekProxy(opts, res) {
           dsEvent = '';
 
           if (evtType === 'close') {
-            if ((searchEnabled || wantSearch) && !sawResponseContent) {
-              emitOpenAI({ content: '\n\n[Error: DeepSeek closed before final answer after search]' });
+            // Upstream closed the SSE. If we only saw search/tool scaffolding, keep waiting
+            // for a bit is impossible after close — emit a clear error, not a fake empty success.
+            if ((searchEnabled || wantSearch || sawSearchPhase) && !sawResponseContent) {
+              emitOpenAI({
+                content: '\n\n[Error: DeepSeek closed before final answer after search]',
+              });
+              console.log('[deepseek] event:close without final content (search phase=%s chars=%s)', sawSearchPhase, responseChars);
+            } else if (!sawResponseContent && responseChars < 1) {
+              emitOpenAI({ content: '\n\n[Error: DeepSeek stream closed with empty reply]' });
             }
             emitOpenAI({}, 'stop');
             safeWrite('data: [DONE]\n\n');
@@ -408,8 +425,9 @@ async function deepseekProxy(opts, res) {
                 && (item.v === 'FINISHED' || item.v === 'CONTENT_FILTER')
               )
             ) {
-              if ((searchEnabled || wantSearch) && sawSearchPhase && !sawResponseContent && responseChars < 60) {
-                console.log('[deepseek] ignore early BATCH FINISHED during search');
+              if ((searchEnabled || wantSearch || sawSearchPhase) && !sawResponseContent && responseChars < 80) {
+                console.log('[deepseek] ignore early BATCH FINISHED during search; keep reading');
+                resetIdleTimer();
                 continue;
               }
               emitOpenAI({}, 'stop');
@@ -539,8 +557,9 @@ async function deepseekProxy(opts, res) {
 
             // status SET FINISHED
             if (evt.p && /status$/i.test(evt.p) && (evt.v === 'FINISHED' || evt.v === 'CONTENT_FILTER')) {
-              if ((searchEnabled || wantSearch) && sawSearchPhase && !sawResponseContent && responseChars < 60) {
+              if ((searchEnabled || wantSearch || sawSearchPhase) && !sawResponseContent && responseChars < 80) {
                 console.log('[deepseek] ignore early FINISHED during search; waiting for answer');
+                resetIdleTimer();
                 continue;
               }
               emitOpenAI({}, 'stop');
@@ -556,11 +575,20 @@ async function deepseekProxy(opts, res) {
     }
     clearTimeout(idleTimer);
     res.removeListener?.('close', onClientClose);
-    if (timedOut && !res.writableEnded) {
-      emitOpenAI({}, 'stop');
-      safeWrite('data: [DONE]\n\n');
-    }
     if (!res.writableEnded) {
+      // Reader ended / timed out without a normal FINISHED path
+      if (!streamDone || timedOut) {
+        if ((searchEnabled || wantSearch || sawSearchPhase) && !sawResponseContent) {
+          emitOpenAI({
+            content: '\n\n[Error: DeepSeek closed before final answer after search]',
+          });
+          console.log('[deepseek] stream end empty after search timedOut=%s', timedOut);
+        } else if (!sawResponseContent && responseChars < 1 && !timedOut) {
+          // Quiet empty end — still send stop so clients don't hang
+        }
+        emitOpenAI({}, 'stop');
+        safeWrite('data: [DONE]\n\n');
+      }
       try { res.end(); } catch {}
     }
   } catch (err) {
