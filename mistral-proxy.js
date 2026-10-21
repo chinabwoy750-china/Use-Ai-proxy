@@ -156,6 +156,7 @@ function systemPrompt(messages) {
 function toMessages(messages) {
   // Preserve tool history for Mistral. Assistant turns with tool_calls must keep
   // tool_calls and may have null/empty content. Tool role must keep tool_call_id.
+  // Mistral rejects assistant messages that have neither content nor tool_calls.
   return (messages || []).map((m) => {
     const role = m.role || 'user';
     let content = m.content;
@@ -174,15 +175,15 @@ function toMessages(messages) {
     }
     if (role === 'assistant') {
       const out = { role: 'assistant' };
-      const hasTools = Array.isArray(m.tool_calls) && m.tool_calls.length > 0;
+      const rawTools = Array.isArray(m.tool_calls) ? m.tool_calls.filter(Boolean) : [];
+      const hasTools = rawTools.length > 0;
       if (hasTools) {
-        out.tool_calls = m.tool_calls;
-        // Mistral requires either content or tool_calls, never both missing.
-        // Keep content only when it is a non-empty string.
-        if (typeof content === 'string' && content.length) out.content = content;
-        else if (content != null && String(content).length) out.content = String(content);
+        out.tool_calls = rawTools;
+        // Prefer omitting content when tool_calls are present (Mistral is happier).
+        if (typeof content === 'string' && content.trim().length) out.content = content;
       } else {
-        out.content = content == null ? '' : String(content);
+        // Never send assistant with neither content nor tool_calls.
+        out.content = content == null || content === '' ? ' ' : String(content);
       }
       return out;
     }
