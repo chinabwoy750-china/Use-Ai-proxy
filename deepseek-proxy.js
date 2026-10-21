@@ -239,14 +239,20 @@ async function createPowHeader(acc) {
     throw new Error(`Challenge fetch failed: ${challengeRes.status} ${t.slice(0, 120)}`);
   }
   const challengeData = await challengeRes.json();
-  const challenge =
-    challengeData?.data?.biz_data
-    || challengeData?.data
-    || challengeData?.biz_data
-    || challengeData;
+  // DeepSeek shape: { data: { biz_data: { challenge: { algorithm, challenge, salt, difficulty, signature, target_path } } } }
+  const challenge = extractPowChallenge(challengeData);
   if (!challenge || !challenge.challenge) {
-    throw new Error('Invalid challenge data: ' + JSON.stringify(challengeData).slice(0, 200));
+    throw new Error('Invalid challenge data: ' + JSON.stringify(challengeData).slice(0, 300));
   }
+  if (challenge.difficulty == null || challenge.difficulty === '') {
+    // ds2api default when field missing
+    challenge.difficulty = 144000;
+  }
+  console.log(
+    '[deepseek] pow challenge ok difficulty=%s expire_at=%s',
+    challenge.difficulty,
+    challenge.expire_at
+  );
   const answer = await solveChallengeAsync(challenge);
   return buildPowHeader(
     answer,
@@ -255,6 +261,28 @@ async function createPowHeader(acc) {
     challenge.signature,
     challenge.target_path || '/api/v0/chat/completion'
   );
+}
+
+function extractPowChallenge(challengeData) {
+  const root = challengeData || {};
+  const data = root.data || root;
+  const biz = (data && data.biz_data) || data || root;
+
+  // Nested: biz_data.challenge = { challenge, difficulty, ... }
+  if (biz && biz.challenge && typeof biz.challenge === 'object' && !Array.isArray(biz.challenge)) {
+    return biz.challenge;
+  }
+  // Flat: biz_data already has challenge string + difficulty
+  if (biz && typeof biz.challenge === 'string') {
+    return biz;
+  }
+  if (data && data.challenge && typeof data.challenge === 'object' && !Array.isArray(data.challenge)) {
+    return data.challenge;
+  }
+  if (root.challenge && typeof root.challenge === 'object') {
+    return root.challenge;
+  }
+  return biz || data || root;
 }
 
 function observeMessageId(evt, cur) {

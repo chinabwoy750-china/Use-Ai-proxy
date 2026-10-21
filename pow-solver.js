@@ -44,9 +44,14 @@ function solveChallenge(challenge) {
   const salt = String(challenge.salt || '');
   const expireAt = challenge.expire_at;
   const prefix = `${salt}_${expireAt}_`;
-  const difficulty = Number(challenge.difficulty);
+  // Accept difficulty from several possible keys; default matches ds2api
+  const difficulty = Number(
+    challenge.difficulty ?? challenge.diff ?? challenge.target ?? 144000
+  );
   if (!isFinite(difficulty) || difficulty <= 0) {
-    throw new Error(`Invalid PoW difficulty: ${challenge.difficulty}`);
+    throw new Error(
+      `Invalid PoW difficulty: ${challenge.difficulty} (keys: ${Object.keys(challenge || {}).join(',')})`
+    );
   }
 
   const challengeBytes = Buffer.from(challengeStr, 'utf-8');
