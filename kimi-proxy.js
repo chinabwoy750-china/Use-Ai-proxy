@@ -9,7 +9,7 @@
  *   KIMI_REFRESH_TOKENS — comma-separated refresh tokens (pool / rotation)
  */
 const crypto = require('crypto');
-const { buildToolInstructions, StreamToolSieve } = require('./tool-sieve');
+const { buildToolInstructions, StreamToolSieve, stripInstructionLeak } = require('./tool-sieve');
 
 const KIMI_BASE = (process.env.KIMI_URL || 'https://www.kimi.ai').replace(/\/$/, '');
 const AUTH_BASE = (process.env.KIMI_AUTH_URL || 'https://auth.kimi.ai').replace(/\/$/, '');
@@ -315,9 +315,11 @@ module.exports = async function kimiProxy(opts, res) {
           sawAssistant = true;
           if (sieve) {
             const { flush } = sieve.push(text);
-            if (flush) safeWrite(`data: ${mk({ content: flush })}\n\n`);
+            const cleaned = stripInstructionLeak(flush);
+            if (cleaned) safeWrite(`data: ${mk({ content: cleaned })}\n\n`);
           } else {
-            safeWrite(`data: ${mk({ content: text })}\n\n`);
+            const cleaned = stripInstructionLeak(text);
+            if (cleaned) safeWrite(`data: ${mk({ content: cleaned })}\n\n`);
           }
         } catch {}
       }
@@ -327,7 +329,8 @@ module.exports = async function kimiProxy(opts, res) {
     if (sieve) {
       const fin = sieve.finalize();
       if (fin.tool_calls && fin.tool_calls.length) {
-        if (fin.content) safeWrite(`data: ${mk({ content: fin.content })}\n\n`);
+        const pre = stripInstructionLeak(fin.content || '');
+        if (pre) safeWrite(`data: ${mk({ content: pre })}\n\n`);
         for (let i = 0; i < fin.tool_calls.length; i++) {
           const tc = fin.tool_calls[i];
           safeWrite(`data: ${mk({
@@ -341,7 +344,8 @@ module.exports = async function kimiProxy(opts, res) {
         }
         finish = 'tool_calls';
       } else if (fin.leftover) {
-        safeWrite(`data: ${mk({ content: fin.leftover })}\n\n`);
+        const cleaned = stripInstructionLeak(fin.leftover);
+        if (cleaned) safeWrite(`data: ${mk({ content: cleaned })}\n\n`);
       }
     }
     safeWrite(`data: ${mk({}, finish)}\n\n`);

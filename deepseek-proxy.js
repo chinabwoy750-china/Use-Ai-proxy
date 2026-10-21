@@ -2,7 +2,7 @@
 
 const crypto = require('crypto');
 const { solveChallengeAsync, buildPowHeader } = require('./pow-solver');
-const { buildToolInstructions, StreamToolSieve } = require('./tool-sieve');
+const { buildToolInstructions, StreamToolSieve, stripInstructionLeak } = require('./tool-sieve');
 
 // secrets.js is expected to export:
 //   DEEPSEEK_URL   e.g. 'https://chat.deepseek.com'
@@ -398,24 +398,34 @@ async function consumeDeepSeekSSE(chatRes, {
         if (toolSieve) {
           const { flush } = toolSieve.push(text);
           if (flush) {
-            sawResponseContent = true;
-            responseChars += flush.length;
-            emitOpenAI({ content: flush });
+            const cleaned = stripInstructionLeak(flush);
+            if (cleaned) {
+              sawResponseContent = true;
+              responseChars += cleaned.length;
+              emitOpenAI({ content: cleaned });
+            }
           }
         } else {
-          emitOpenAI({ content: text });
+          const cleaned = stripInstructionLeak(text);
+          if (cleaned) emitOpenAI({ content: cleaned });
         }
       } else if (toolSieve) {
         const { flush } = toolSieve.push(text);
         if (flush) {
-          sawResponseContent = true;
-          responseChars += flush.length;
-          emitOpenAI({ content: flush });
+          const cleaned = stripInstructionLeak(flush);
+          if (cleaned) {
+            sawResponseContent = true;
+            responseChars += cleaned.length;
+            emitOpenAI({ content: cleaned });
+          }
         }
       } else {
-        sawResponseContent = true;
-        responseChars += text.length;
-        emitOpenAI({ content: text });
+        const cleaned = stripInstructionLeak(text);
+        if (cleaned) {
+          sawResponseContent = true;
+          responseChars += cleaned.length;
+          emitOpenAI({ content: cleaned });
+        }
       }
     }
   }

@@ -1,6 +1,6 @@
 'use strict';
 
-const { buildToolInstructions, StreamToolSieve } = require('./tool-sieve');
+const { buildToolInstructions, StreamToolSieve, stripInstructionLeak } = require('./tool-sieve');
 /**
  * Mistral — API key pool (recommended) + optional web cookie pool
  *
@@ -381,7 +381,7 @@ async function streamWeb(opts, res, model, openaiId, mk, safeWrite) {
       }
       return 'tool_calls';
     }
-    if (fin.leftover) safeWrite(`data: ${mk({ content: fin.leftover })}\n\n`);
+    if (fin.leftover) { const c = stripInstructionLeak(fin.leftover); if (c) safeWrite(`data: ${mk({ content: c })}\n\n`); }
   }
   return 'stop';
 }
