@@ -154,15 +154,42 @@ function systemPrompt(messages) {
 }
 
 function toMessages(messages) {
+  // Preserve tool history for Mistral. Assistant turns with tool_calls must keep
+  // tool_calls and may have null/empty content. Tool role must keep tool_call_id.
   return (messages || []).map((m) => {
+    const role = m.role || 'user';
     let content = m.content;
     if (Array.isArray(content)) {
-      content = content.filter((p) => p.type === 'text').map((p) => p.text).join('\n');
+      content = content
+        .filter((p) => p && (p.type === 'text' || typeof p.text === 'string'))
+        .map((p) => p.text || '')
+        .join('\n');
     }
-    return {
-      role: m.role === 'assistant' ? 'assistant' : m.role === 'system' ? 'system' : 'user',
-      content: String(content || ''),
-    };
+    if (role === 'tool') {
+      return {
+        role: 'tool',
+        tool_call_id: m.tool_call_id || m.id || '',
+        content: content == null ? '' : String(content),
+      };
+    }
+    if (role === 'assistant') {
+      const out = { role: 'assistant' };
+      const hasTools = Array.isArray(m.tool_calls) && m.tool_calls.length > 0;
+      if (hasTools) {
+        out.tool_calls = m.tool_calls;
+        // Mistral requires either content or tool_calls, never both missing.
+        // Keep content only when it is a non-empty string.
+        if (typeof content === 'string' && content.length) out.content = content;
+        else if (content != null && String(content).length) out.content = String(content);
+      } else {
+        out.content = content == null ? '' : String(content);
+      }
+      return out;
+    }
+    if (role === 'system') {
+      return { role: 'system', content: content == null ? '' : String(content) };
+    }
+    return { role: 'user', content: content == null ? '' : String(content) };
   });
 }
 
