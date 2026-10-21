@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { solveChallengeAsync, buildPowHeader } = require('./pow-solver');
+const { buildToolInstructions, StreamToolSieve } = require('./tool-sieve');
 
 // secrets.js is expected to export:
 //   DEEPSEEK_URL   e.g. 'https://chat.deepseek.com'
@@ -43,25 +44,101 @@ function loadAccounts() {
   return accounts;
 }
 
-let ACCOUNTS = loadAccounts();
+let ACCOUNTS = loadAccounts().map((a, i) => ({
+  ...a,
+  id: a.id || `acc${i}`,
+  sessionId: null,
+}));
 let accountIndex = 0;
-let activeSessionId = null;
+
+// --- Account pool: inflight slots + wait queue (ds2api-inspired) ---
+const MAX_INFLIGHT = Math.max(1, parseInt(process.env.DEEPSEEK_MAX_INFLIGHT || '2', 10) || 2);
+const MAX_QUEUE = Math.max(
+  0,
+  parseInt(process.env.DEEPSEEK_MAX_QUEUE || String(Math.max(ACCOUNTS.length, 1) * MAX_INFLIGHT * 2), 10) || 0
+);
+const QUEUE_WAIT_MS = Math.max(1000, parseInt(process.env.DEEPSEEK_QUEUE_WAIT_MS || '60000', 10) || 60000);
+
+const inflight = new Map(); // id -> count
+const waiters = []; // { resolve, reject, timer }
+
+function poolStats() {
+  let used = 0;
+  for (const v of inflight.values()) used += v;
+  return { accounts: ACCOUNTS.length, inflight: used, queue: waiters.length, maxInflight: MAX_INFLIGHT, maxQueue: MAX_QUEUE };
+}
+
+function canAcquire(id) {
+  return (inflight.get(id) || 0) < MAX_INFLIGHT;
+}
+
+function tryAcquireLocked(exclude) {
+  if (!ACCOUNTS.length) return null;
+  const n = ACCOUNTS.length;
+  for (let i = 0; i < n; i++) {
+    const idx = (accountIndex + i) % n;
+    const acc = ACCOUNTS[idx];
+    if (exclude && exclude.has(acc.id)) continue;
+    if (!canAcquire(acc.id)) continue;
+    inflight.set(acc.id, (inflight.get(acc.id) || 0) + 1);
+    accountIndex = (idx + 1) % n;
+    return acc;
+  }
+  return null;
+}
+
+function wakeWaiters() {
+  while (waiters.length) {
+    const acc = tryAcquireLocked(null);
+    if (!acc) break;
+    const w = waiters.shift();
+    clearTimeout(w.timer);
+    w.resolve(acc);
+  }
+}
+
+function acquireAccount(exclude) {
+  const immediate = tryAcquireLocked(exclude || null);
+  if (immediate) return Promise.resolve(immediate);
+  if (waiters.length >= MAX_QUEUE) {
+    return Promise.reject(Object.assign(new Error('DeepSeek account pool saturated'), { code: 429 }));
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const i = waiters.findIndex((x) => x.resolve === resolve);
+      if (i >= 0) waiters.splice(i, 1);
+      reject(Object.assign(new Error('DeepSeek account queue timeout'), { code: 429 }));
+    }, QUEUE_WAIT_MS);
+    waiters.push({ resolve, reject, timer });
+  });
+}
+
+function releaseAccount(acc) {
+  if (!acc || !acc.id) return;
+  const cur = inflight.get(acc.id) || 0;
+  if (cur <= 1) inflight.delete(acc.id);
+  else inflight.set(acc.id, cur - 1);
+  wakeWaiters();
+}
 
 function currentAccount() {
-  if (!ACCOUNTS.length) return { token: '', cookie: '' };
+  // legacy helper — prefer leased account from acquireAccount
+  if (!ACCOUNTS.length) return { token: '', cookie: '', id: '' };
   return ACCOUNTS[accountIndex % ACCOUNTS.length];
 }
 
-function rotateAccount(reason) {
+function rotateAccount(reason, acc) {
   if (ACCOUNTS.length < 2) return false;
+  if (acc) acc.sessionId = null;
   accountIndex = (accountIndex + 1) % ACCOUNTS.length;
-  activeSessionId = null;
-  console.log('[deepseek] rotate account ->', accountIndex, reason || '');
+  console.log('[deepseek] rotate preference ->', accountIndex, reason || '', poolStats());
   return true;
 }
 
-function DS_HEADERS() {
-  const acc = currentAccount();
+console.log('[deepseek] pool ready', poolStats());
+
+function DS_HEADERS(acc) {
+  acc = acc || currentAccount();
   return {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:153.0) Gecko/20100101 Firefox/153.0',
     'Accept': '*/*',
@@ -151,10 +228,10 @@ const EMPTY_RETRY_SUFFIX =
   'Previous reply had no visible output. Please regenerate the visible final answer or tool call now.';
 const EMPTY_RETRY_MAX = Math.max(0, parseInt(process.env.DEEPSEEK_EMPTY_RETRY || '1', 10) || 1);
 
-async function createPowHeader() {
+async function createPowHeader(acc) {
   const challengeRes = await fetch(`${DEEPSEEK_URL}/api/v0/chat/create_pow_challenge`, {
     method: 'POST',
-    headers: DS_HEADERS(),
+    headers: DS_HEADERS(acc),
     body: JSON.stringify({ target_path: '/api/v0/chat/completion' }),
   });
   if (!challengeRes.ok) {
@@ -210,6 +287,7 @@ async function consumeDeepSeekSSE(chatRes, {
   wantSearch,
   idleMs,
   signal,
+  toolSieve,
 }) {
   const reader = chatRes.body.getReader();
   const decoder = new TextDecoder();
@@ -236,7 +314,24 @@ async function consumeDeepSeekSSE(chatRes, {
     } else {
       if (SEARCH_ANN.test(text) && text.length < 120) {
         sawSearchPhase = true;
-        emitOpenAI({ content: text });
+        // search announce still goes to content when not in tool hold
+        if (toolSieve) {
+          const { flush } = toolSieve.push(text);
+          if (flush) {
+            sawResponseContent = true;
+            responseChars += flush.length;
+            emitOpenAI({ content: flush });
+          }
+        } else {
+          emitOpenAI({ content: text });
+        }
+      } else if (toolSieve) {
+        const { flush } = toolSieve.push(text);
+        if (flush) {
+          sawResponseContent = true;
+          responseChars += flush.length;
+          emitOpenAI({ content: flush });
+        }
       } else {
         sawResponseContent = true;
         responseChars += text.length;
@@ -471,13 +566,35 @@ async function consumeDeepSeekSSE(chatRes, {
   clearTimeout(idleTimer);
   try { reader.cancel(); } catch {}
 
+  let tool_calls = [];
+  if (toolSieve) {
+    const fin = toolSieve.finalize();
+    if (fin.tool_calls && fin.tool_calls.length) {
+      tool_calls = fin.tool_calls;
+      // Do not count tool XML as visible answer content
+    } else if (fin.leftover) {
+      sawResponseContent = true;
+      responseChars += fin.leftover.length;
+      emitOpenAI({ content: fin.leftover });
+    } else if (fin.content && !responseChars) {
+      // content after stripping tools only
+      const c = fin.content;
+      if (c) {
+        sawResponseContent = true;
+        responseChars += c.length;
+        emitOpenAI({ content: c });
+      }
+    }
+  }
+
   return {
     responseChars,
     thinkingChars,
     responseMessageId,
-    sawResponseContent,
+    sawResponseContent: sawResponseContent || tool_calls.length > 0,
     sawSearchPhase,
     timedOut,
+    tool_calls,
   };
 }
 
@@ -504,8 +621,9 @@ async function deepseekProxy(opts, res) {
   });
 
   const { message, session_id, system_prompt, history } = extractMessages(opts);
-  let activeLocalSession = session_id || activeSessionId || '';
+  let activeLocalSession = session_id || '';
   let abortCtrl = null;
+  let leased = null;
 
   const onClientClose = () => {
     try { abortCtrl?.abort(); } catch {}
@@ -526,15 +644,24 @@ async function deepseekProxy(opts, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.write(`data: ${mkChunk({ role: 'assistant', content: '' })}\n\n`);
 
-    if (!ACCOUNTS.length || (!currentAccount().token && !currentAccount().cookie)) {
+    if (!ACCOUNTS.length) {
       throw new Error('Missing DEEPSEEK_TOKEN / DEEPSEEK_COOKIE — set env (multi: DEEPSEEK_ACCOUNTS or TOKEN,TOKEN with COOKIE|||COOKIE)');
+    }
+
+    // Lease account slot (inflight + wait queue)
+    leased = await acquireAccount();
+    console.log('[deepseek] acquired', leased.id, poolStats());
+
+    // Reuse per-account session when possible
+    if (!activeLocalSession && leased.sessionId) {
+      activeLocalSession = leased.sessionId;
     }
 
     // 1. Session
     if (!activeLocalSession) {
       const createRes = await fetch(`${DEEPSEEK_URL}/api/v0/chat_session/create`, {
         method: 'POST',
-        headers: DS_HEADERS(),
+        headers: DS_HEADERS(leased),
         body: '{}',
       });
       if (!createRes.ok) {
@@ -549,11 +676,15 @@ async function deepseekProxy(opts, res) {
         || createData?.biz_data?.id
         || '';
       if (!activeLocalSession) throw new Error('No session ID returned from create');
-      activeSessionId = activeLocalSession;
+      if (leased) leased.sessionId = activeLocalSession;
     }
 
-    const basePrompt = buildPrompt(system_prompt, history, message);
     const hasClientTools = Array.isArray(opts.tools) && opts.tools.length > 0;
+    let toolSystem = system_prompt || '';
+    if (hasClientTools) {
+      toolSystem = (toolSystem ? toolSystem + '\n\n' : '') + buildToolInstructions(opts.tools);
+    }
+    const basePrompt = buildPrompt(toolSystem, history, message);
     const wantSearch =
       opts.search_enabled === true
       || /search/i.test(String(opts.model || ''))
@@ -584,7 +715,7 @@ async function deepseekProxy(opts, res) {
       // On empty retry: disable thinking so we force a visible answer (ds2api-style recovery)
       const thinkingThis = attempt === 0 ? !!isExpert : false;
 
-      const powHeader = await createPowHeader();
+      const powHeader = await createPowHeader(leased);
       const body = {
         chat_session_id: activeLocalSession,
         parent_message_id: parentMessageId || null,
@@ -599,7 +730,7 @@ async function deepseekProxy(opts, res) {
 
       const chatRes = await fetch(`${DEEPSEEK_URL}/api/v0/chat/completion`, {
         method: 'POST',
-        headers: { ...DS_HEADERS(), 'x-ds-pow-response': powHeader },
+        headers: { ...DS_HEADERS(leased), 'x-ds-pow-response': powHeader },
         signal: abortCtrl.signal,
         body: JSON.stringify(body),
       });
@@ -611,7 +742,7 @@ async function deepseekProxy(opts, res) {
           throw new Error(msg + ' (rotated account — retry request)');
         }
         if (/401|403|429|502|503/i.test(String(chatRes.status))) {
-          activeSessionId = null;
+          if (leased) leased.sessionId = null;
           activeLocalSession = '';
         }
         throw new Error(msg);
@@ -635,6 +766,7 @@ async function deepseekProxy(opts, res) {
         throw new Error(msg);
       }
 
+      const toolSieve = hasClientTools ? new StreamToolSieve(true) : null;
       lastStats = await consumeDeepSeekSSE(chatRes, {
         emitOpenAI,
         isExpert: thinkingThis,
@@ -642,6 +774,7 @@ async function deepseekProxy(opts, res) {
         wantSearch,
         idleMs,
         signal: abortCtrl.signal,
+        toolSieve,
       });
       totalContent += lastStats.responseChars;
       if (lastStats.responseMessageId) {
@@ -649,17 +782,25 @@ async function deepseekProxy(opts, res) {
       }
 
       console.log(
-        '[deepseek] attempt=%s model=%s contentChars=%s thinkChars=%s search=%s timedOut=%s msgId=%s',
+        '[deepseek] attempt=%s model=%s contentChars=%s thinkChars=%s tools=%s search=%s timedOut=%s msgId=%s pool=%j',
         attempt,
         opts.model,
         lastStats.responseChars,
         lastStats.thinkingChars,
+        (lastStats.tool_calls || []).length,
         !!(searchEnabled || lastStats.sawSearchPhase),
         lastStats.timedOut,
-        lastStats.responseMessageId || 0
+        lastStats.responseMessageId || 0,
+        poolStats()
       );
 
-      if (lastStats.responseChars > 0 || lastStats.timedOut || abortCtrl.signal.aborted) {
+      // Tool calls count as successful output — do not empty-retry
+      if (
+        (lastStats.tool_calls && lastStats.tool_calls.length)
+        || lastStats.responseChars > 0
+        || lastStats.timedOut
+        || abortCtrl.signal.aborted
+      ) {
         break;
       }
       // Empty visible output → same-session retry (ds2api EmptyOutputRetry)
@@ -670,7 +811,27 @@ async function deepseekProxy(opts, res) {
     }
 
     if (!res.writableEnded) {
-      if (totalContent < 1) {
+      const tcalls = (lastStats && lastStats.tool_calls) || [];
+      if (tcalls.length) {
+        // OpenAI streaming tool_calls shape
+        for (let i = 0; i < tcalls.length; i++) {
+          const tc = tcalls[i];
+          emitOpenAI({
+            tool_calls: [
+              {
+                index: i,
+                id: tc.id,
+                type: 'function',
+                function: {
+                  name: tc.function.name,
+                  arguments: tc.function.arguments,
+                },
+              },
+            ],
+          });
+        }
+        emitOpenAI({}, 'tool_calls');
+      } else if (totalContent < 1) {
         if (lastStats.sawSearchPhase) {
           emitOpenAI({
             content: '\n\n[Error: DeepSeek closed before final answer after search]',
@@ -685,23 +846,32 @@ async function deepseekProxy(opts, res) {
             content: '\n\n[Error: DeepSeek stream closed with empty reply]',
           });
         }
+        emitOpenAI({}, 'stop');
+      } else {
+        emitOpenAI({}, 'stop');
       }
-      emitOpenAI({}, 'stop');
       safeWrite('data: [DONE]\n\n');
       try { res.end(); } catch {}
     }
   } catch (err) {
     res.removeListener?.('close', onClientClose);
     if (res.destroyed || res.writableEnded) return;
+    const status = err.code === 429 ? 429 : null;
+    if (status && !res.headersSent) {
+      // rare: headers already 200 for SSE — still emit error chunk
+    }
     const hint = err.name === 'AbortError'
       ? 'DeepSeek timed out — try again'
-      : `DeepSeek unavailable (${err.message})`;
+      : err.code === 429
+        ? err.message
+        : `DeepSeek unavailable (${err.message})`;
     safeWrite(`data: ${mkChunk({ content: `\n\n[Error: ${hint}]` })}\n\n`);
     safeWrite(`data: ${mkChunk({}, 'stop')}\n\n`);
     safeWrite('data: [DONE]\n\n');
     try { res.end(); } catch {}
   } finally {
     res.removeListener?.('close', onClientClose);
+    try { releaseAccount(leased); } catch {}
   }
 }
 
@@ -739,6 +909,7 @@ deepseekProxy.MODELS = [
   { slug: 'deepseek', label: 'DeepSeek default' },
 ];
 deepseekProxy.accountCount = () => ACCOUNTS.length;
+deepseekProxy.poolStats = poolStats;
 
 deepseekProxy.deepseekDelete = deepseekDelete;
 module.exports = deepseekProxy;
