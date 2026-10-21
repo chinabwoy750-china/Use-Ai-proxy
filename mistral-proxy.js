@@ -1,4 +1,6 @@
 'use strict';
+
+const { buildToolInstructions, StreamToolSieve } = require('./tool-sieve');
 /**
  * Mistral — API key pool (recommended) + optional web cookie pool
  *
@@ -190,6 +192,9 @@ async function streamOfficial(opts, res, model, openaiId, mk, safeWrite) {
           messages: toMessages(opts.messages),
           stream: true,
           temperature: opts.temperature,
+          ...(Array.isArray(opts.tools) && opts.tools.length
+            ? { tools: opts.tools, tool_choice: opts.tool_choice || 'auto' }
+            : {}),
         }),
       });
       if (upstream.status === 429 || upstream.status === 401) {
@@ -216,6 +221,7 @@ async function streamOfficial(opts, res, model, openaiId, mk, safeWrite) {
   const reader = upstream.body.getReader();
   const dec = new TextDecoder();
   let buf = '';
+  let finish = null;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -234,13 +240,15 @@ async function streamOfficial(opts, res, model, openaiId, mk, safeWrite) {
         if (delta.role) out.role = delta.role;
         if (delta.content) out.content = delta.content;
         if (delta.reasoning_content) out.reasoning_content = delta.reasoning_content;
+        if (delta.tool_calls) out.tool_calls = delta.tool_calls;
         if (Object.keys(out).length) safeWrite(`data: ${mk(out)}\n\n`);
         if (obj.choices?.[0]?.finish_reason) {
-          safeWrite(`data: ${mk({}, obj.choices[0].finish_reason)}\n\n`);
+          finish = obj.choices[0].finish_reason;
         }
       } catch {}
     }
   }
+  return finish || 'stop';
 }
 
 async function createWebConversation(cookie, model, sys) {
@@ -321,6 +329,7 @@ async function streamWeb(opts, res, model, openaiId, mk, safeWrite) {
   const reader = upstream.body.getReader();
   const dec = new TextDecoder();
   let buf = '';
+  const sieve = upstream._hasTools ? new StreamToolSieve(true) : null;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -335,18 +344,46 @@ async function streamWeb(opts, res, model, openaiId, mk, safeWrite) {
       try {
         const obj = JSON.parse(raw);
         const choices = obj.choices || [];
+        let text = '';
         if (choices.length) {
           for (const choice of choices) {
             const delta = choice.delta || {};
-            if (delta.content) safeWrite(`data: ${mk({ content: delta.content })}\n\n`);
+            if (delta.content) text += delta.content;
           }
         } else {
           const content = obj.content || obj.text || '';
-          if (content && typeof content === 'string') safeWrite(`data: ${mk({ content })}\n\n`);
+          if (content && typeof content === 'string') text = content;
+        }
+        if (!text) continue;
+        if (sieve) {
+          const { flush } = sieve.push(text);
+          if (flush) safeWrite(`data: ${mk({ content: flush })}\n\n`);
+        } else {
+          safeWrite(`data: ${mk({ content: text })}\n\n`);
         }
       } catch {}
     }
   }
+  if (sieve) {
+    const fin = sieve.finalize();
+    if (fin.tool_calls && fin.tool_calls.length) {
+      if (fin.content) safeWrite(`data: ${mk({ content: fin.content })}\n\n`);
+      for (let i = 0; i < fin.tool_calls.length; i++) {
+        const tc = fin.tool_calls[i];
+        safeWrite(`data: ${mk({
+          tool_calls: [{
+            index: i,
+            id: tc.id,
+            type: 'function',
+            function: { name: tc.function.name, arguments: tc.function.arguments },
+          }],
+        })}\n\n`);
+      }
+      return 'tool_calls';
+    }
+    if (fin.leftover) safeWrite(`data: ${mk({ content: fin.leftover })}\n\n`);
+  }
+  return 'stop';
 }
 
 module.exports = async function mistralProxy(opts, res) {
@@ -387,10 +424,11 @@ module.exports = async function mistralProxy(opts, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     safeWrite(`data: ${mk({ role: 'assistant', content: '' })}\n\n`);
 
-    if (KEY_POOL.length) await streamOfficial(opts, res, model, openaiId, mk, safeWrite);
-    else await streamWeb(opts, res, model, openaiId, mk, safeWrite);
+    let finish = 'stop';
+    if (KEY_POOL.length) finish = (await streamOfficial(opts, res, model, openaiId, mk, safeWrite)) || 'stop';
+    else finish = (await streamWeb(opts, res, model, openaiId, mk, safeWrite)) || 'stop';
 
-    safeWrite(`data: ${mk({}, 'stop')}\n\n`);
+    safeWrite(`data: ${mk({}, finish)}\n\n`);
     safeWrite('data: [DONE]\n\n');
     try {
       res.end();

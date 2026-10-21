@@ -9,6 +9,7 @@
  *   KIMI_REFRESH_TOKENS — comma-separated refresh tokens (pool / rotation)
  */
 const crypto = require('crypto');
+const { buildToolInstructions, StreamToolSieve } = require('./tool-sieve');
 
 const KIMI_BASE = (process.env.KIMI_URL || 'https://www.kimi.ai').replace(/\/$/, '');
 const AUTH_BASE = (process.env.KIMI_AUTH_URL || 'https://auth.kimi.ai').replace(/\/$/, '');
@@ -220,7 +221,12 @@ module.exports = async function kimiProxy(opts, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     safeWrite(`data: ${mk({ role: 'assistant', content: '' })}\n\n`);
 
-    const prompt = lastUser(opts.messages);
+    let prompt = lastUser(opts.messages);
+    const hasTools = Array.isArray(opts.tools) && opts.tools.length > 0;
+    if (hasTools) {
+      prompt = buildToolInstructions(opts.tools) + '\n\n' + prompt;
+    }
+    // Client-owned tools: don't force Kimi built-in search
     const streamUrlTpl = (id) => `${KIMI_BASE}/api/chat/${id}/completion/stream`;
     const mo = modelOptions(model);
     const body = {
@@ -229,8 +235,8 @@ module.exports = async function kimiProxy(opts, res) {
       refs: [],
       history: [],
       kimiplus_id: mo.kimiplus_id || 'kimi',
-      use_search: opts.use_search != null ? !!opts.use_search : !!mo.use_search,
-      use_deep_research: opts.use_deep_research != null ? !!opts.use_deep_research : !!mo.use_deep_research,
+      use_search: hasTools ? false : (opts.use_search != null ? !!opts.use_search : !!mo.use_search),
+      use_deep_research: hasTools ? false : (opts.use_deep_research != null ? !!opts.use_deep_research : !!mo.use_deep_research),
       use_semantic_memory: false,
     };
 
@@ -289,6 +295,7 @@ module.exports = async function kimiProxy(opts, res) {
     const dec = new TextDecoder();
     let buf = '';
     let sawAssistant = false;
+    const sieve = hasTools ? new StreamToolSieve(true) : null;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -306,12 +313,38 @@ module.exports = async function kimiProxy(opts, res) {
           if (typeof text !== 'string' || !text) continue;
           if (!sawAssistant && text.trim() === prompt.trim()) continue;
           sawAssistant = true;
-          safeWrite(`data: ${mk({ content: text })}\n\n`);
+          if (sieve) {
+            const { flush } = sieve.push(text);
+            if (flush) safeWrite(`data: ${mk({ content: flush })}\n\n`);
+          } else {
+            safeWrite(`data: ${mk({ content: text })}\n\n`);
+          }
         } catch {}
       }
     }
 
-    safeWrite(`data: ${mk({}, 'stop')}\n\n`);
+    let finish = 'stop';
+    if (sieve) {
+      const fin = sieve.finalize();
+      if (fin.tool_calls && fin.tool_calls.length) {
+        if (fin.content) safeWrite(`data: ${mk({ content: fin.content })}\n\n`);
+        for (let i = 0; i < fin.tool_calls.length; i++) {
+          const tc = fin.tool_calls[i];
+          safeWrite(`data: ${mk({
+            tool_calls: [{
+              index: i,
+              id: tc.id,
+              type: 'function',
+              function: { name: tc.function.name, arguments: tc.function.arguments },
+            }],
+          })}\n\n`);
+        }
+        finish = 'tool_calls';
+      } else if (fin.leftover) {
+        safeWrite(`data: ${mk({ content: fin.leftover })}\n\n`);
+      }
+    }
+    safeWrite(`data: ${mk({}, finish)}\n\n`);
     safeWrite('data: [DONE]\n\n');
     try { res.end(); } catch {}
   } catch (err) {
