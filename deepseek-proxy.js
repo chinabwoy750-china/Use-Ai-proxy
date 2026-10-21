@@ -599,18 +599,19 @@ async function consumeDeepSeekSSE(chatRes, {
     const fin = toolSieve.finalize();
     if (fin.tool_calls && fin.tool_calls.length) {
       tool_calls = fin.tool_calls;
-      // Do not count tool XML as visible answer content
-    } else if (fin.leftover) {
-      sawResponseContent = true;
-      responseChars += fin.leftover.length;
-      emitOpenAI({ content: fin.leftover });
-    } else if (fin.content && !responseChars) {
-      // content after stripping tools only
-      const c = fin.content;
-      if (c) {
+      // Optional plain text before the tool block
+      if (fin.content) {
         sawResponseContent = true;
-        responseChars += c.length;
-        emitOpenAI({ content: c });
+        responseChars += fin.content.length;
+        emitOpenAI({ content: fin.content });
+      }
+    } else {
+      // Flush any buffered tail (short replies are entirely in this tail when tools[] is set)
+      const pending = fin.leftover || fin.content || '';
+      if (pending) {
+        sawResponseContent = true;
+        responseChars += pending.length;
+        emitOpenAI({ content: pending });
       }
     }
   }

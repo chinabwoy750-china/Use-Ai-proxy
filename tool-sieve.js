@@ -155,9 +155,9 @@ class StreamToolSieve {
 
   finalize() {
     if (!this.enabled) {
-      return { content: this.buf, tool_calls: [], held: false };
+      return { content: this.buf, tool_calls: [], held: false, leftover: this.buf };
     }
-    // Flush remaining if no tool block completed
+    // Always include unreleased tail (push() keeps last 64 chars buffered)
     const full = this.releasedText + this.buf;
     const parsed = extractToolCalls(full);
     if (parsed.tool_calls.length) {
@@ -165,14 +165,16 @@ class StreamToolSieve {
         content: parsed.content,
         tool_calls: parsed.tool_calls,
         held: true,
+        leftover: '',
       };
     }
-    // No tools — release any held buffer as content
+    // No tool block — flush everything not yet streamed (tail and/or held tool-looking text)
+    const pending = this.buf || '';
     return {
-      content: this.hold ? this.buf : '',
+      content: pending,
       tool_calls: [],
       held: this.hold,
-      leftover: this.hold ? this.buf : '',
+      leftover: pending,
     };
   }
 }
