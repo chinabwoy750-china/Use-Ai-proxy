@@ -146,9 +146,343 @@ function buildPrompt(system_prompt, history, message) {
   return prompt;
 }
 
+
+const EMPTY_RETRY_SUFFIX =
+  'Previous reply had no visible output. Please regenerate the visible final answer or tool call now.';
+const EMPTY_RETRY_MAX = Math.max(0, parseInt(process.env.DEEPSEEK_EMPTY_RETRY || '1', 10) || 1);
+
+async function createPowHeader() {
+  const challengeRes = await fetch(`${DEEPSEEK_URL}/api/v0/chat/create_pow_challenge`, {
+    method: 'POST',
+    headers: DS_HEADERS(),
+    body: JSON.stringify({ target_path: '/api/v0/chat/completion' }),
+  });
+  if (!challengeRes.ok) {
+    const t = await challengeRes.text().catch(() => '');
+    throw new Error(`Challenge fetch failed: ${challengeRes.status} ${t.slice(0, 120)}`);
+  }
+  const challengeData = await challengeRes.json();
+  const challenge =
+    challengeData?.data?.biz_data
+    || challengeData?.data
+    || challengeData?.biz_data
+    || challengeData;
+  if (!challenge || !challenge.challenge) {
+    throw new Error('Invalid challenge data: ' + JSON.stringify(challengeData).slice(0, 200));
+  }
+  const answer = await solveChallengeAsync(challenge);
+  return buildPowHeader(
+    answer,
+    challenge.challenge,
+    challenge.salt,
+    challenge.signature,
+    challenge.target_path || '/api/v0/chat/completion'
+  );
+}
+
+function observeMessageId(evt, cur) {
+  try {
+    if (typeof evt.response_message_id === 'number' && evt.response_message_id > 0) {
+      return evt.response_message_id;
+    }
+    const candidates = [
+      evt?.v?.response?.message_id,
+      evt?.message?.response?.message_id,
+      evt?.v?.message_id,
+      evt?.message_id,
+    ];
+    for (const c of candidates) {
+      const n = Number(c);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  } catch {}
+  return cur;
+}
+
+/**
+ * Consume one upstream DeepSeek SSE body. Emits OpenAI chunks via emitOpenAI.
+ * Does NOT write [DONE] / stop — caller owns finalization after optional retries.
+ */
+async function consumeDeepSeekSSE(chatRes, {
+  emitOpenAI,
+  isExpert,
+  searchEnabled,
+  wantSearch,
+  idleMs,
+  signal,
+}) {
+  const reader = chatRes.body.getReader();
+  const decoder = new TextDecoder();
+  let sseBuffer = '';
+  let dsEvent = '';
+  let streamDone = false;
+  let inThinking = !!isExpert;
+  let sawResponseFragment = false;
+  let sawResponseContent = false;
+  let sawSearchPhase = false;
+  let responseChars = 0;
+  let thinkingChars = 0;
+  let responseMessageId = 0;
+  const fragTypeByIndex = Object.create(null);
+  const SEARCH_ANN =
+    /I('ll| will) use the search tool|searching the web|web search tool|^SEARCH\b|^WEB_SEARCH\b|^SEARCHING\b/i;
+
+  function emitToken(text, forceChannel) {
+    if (!text) return;
+    const channel = forceChannel || (sawResponseFragment || !inThinking ? 'content' : 'think');
+    if (channel === 'think') {
+      thinkingChars += text.length;
+      emitOpenAI({ reasoning_content: text });
+    } else {
+      if (SEARCH_ANN.test(text) && text.length < 120) {
+        sawSearchPhase = true;
+        emitOpenAI({ content: text });
+      } else {
+        sawResponseContent = true;
+        responseChars += text.length;
+        emitOpenAI({ content: text });
+      }
+    }
+  }
+
+  function noteFragType(idx, type) {
+    const t = String(type || '').toUpperCase();
+    if (!t) return;
+    fragTypeByIndex[idx] = t;
+    if (t === 'THINK' || t === 'REASONING') inThinking = true;
+    if (t === 'RESPONSE' || t === 'TEMPLATE_RESPONSE') {
+      inThinking = false;
+      sawResponseFragment = true;
+    }
+    if (t === 'SEARCH' || t === 'SEARCH_RESULT' || t === 'WEB_SEARCH' || t === 'TOOL_SEARCH') {
+      sawSearchPhase = true;
+    }
+  }
+
+  let idleTimer = null;
+  let timedOut = false;
+  const resetIdleTimer = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      timedOut = true;
+      streamDone = true;
+      try { reader.cancel(); } catch {}
+    }, idleMs);
+  };
+
+  while (!streamDone) {
+    resetIdleTimer();
+    let chunk;
+    try {
+      chunk = await reader.read();
+    } catch {
+      break;
+    }
+    clearTimeout(idleTimer);
+    const { done, value } = chunk;
+    if (done) break;
+    if (signal?.aborted) break;
+    sseBuffer += decoder.decode(value, { stream: true });
+    const lines = sseBuffer.split('\n');
+    sseBuffer = lines.pop();
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      if (trimmed.startsWith('event: ')) {
+        dsEvent = trimmed.slice(7).trim();
+        continue;
+      }
+
+      if (trimmed.startsWith('data: ')) {
+        const raw = trimmed.slice(6).trim();
+        const evtType = dsEvent;
+        dsEvent = '';
+
+        if (evtType === 'close') {
+          streamDone = true;
+          break;
+        }
+        if (evtType === 'ready' || evtType === 'update_session' || evtType === 'title') continue;
+
+        try {
+          const evt = JSON.parse(raw);
+          responseMessageId = observeMessageId(evt, responseMessageId);
+
+          // Terminal BATCH with FINISHED
+          if (
+            (evt.o === 'BATCH' || (Array.isArray(evt.v) && evt.p === 'response'))
+            && Array.isArray(evt.v)
+            && evt.v.some(
+              (item) =>
+                (item.p === 'quasi_status' || item.p === 'status')
+                && (item.v === 'FINISHED' || item.v === 'CONTENT_FILTER')
+            )
+          ) {
+            if (
+              (searchEnabled || wantSearch || sawSearchPhase)
+              && !sawResponseContent
+              && responseChars < 80
+            ) {
+              console.log('[deepseek] ignore early BATCH FINISHED during search; keep reading');
+              resetIdleTimer();
+              continue;
+            }
+            streamDone = true;
+            break;
+          }
+
+          // search_results path
+          if (
+            evt.p === 'response/search_results'
+            || (typeof evt.p === 'string' && /search_results|\/results$/i.test(evt.p))
+          ) {
+            sawSearchPhase = true;
+            const n = Array.isArray(evt.v) ? evt.v.length : 0;
+            if (n) emitOpenAI({ content: `\n[Found ${n} web page(s)]\n` });
+            continue;
+          }
+
+          // Track fragment type assignments
+          if (typeof evt.p === 'string') {
+            const tm = evt.p.match(/fragments\/(-?\d+)\/type$/i);
+            if (tm && evt.v != null) noteFragType(tm[1], evt.v);
+          }
+
+          // fragments envelope
+          if (evt.v && evt.v.response && Array.isArray(evt.v.response.fragments)) {
+            evt.v.response.fragments.forEach((frag, i) => {
+              if (frag && frag.type) noteFragType(String(i), frag.type);
+            });
+            for (const frag of evt.v.response.fragments) {
+              if (!frag) continue;
+              const ftype = String(frag.type || '').toUpperCase();
+              if (ftype === 'THINK' || ftype === 'REASONING') {
+                if (frag.content) emitToken(frag.content, 'think');
+              } else if (ftype === 'RESPONSE' || ftype === 'TEMPLATE_RESPONSE') {
+                if (frag.content) emitToken(frag.content, 'content');
+              } else if (ftype === 'SEARCH' || ftype === 'TOOL_SEARCH') {
+                sawSearchPhase = true;
+              } else if (frag.content) {
+                emitToken(frag.content);
+              }
+            }
+            continue;
+          }
+
+          // APPEND array of fragment-like items
+          if (evt.o === 'APPEND' && Array.isArray(evt.v)) {
+            for (const item of evt.v) {
+              if (item && typeof item === 'object') {
+                if (item.type) noteFragType(String(item.id ?? item.index ?? ''), item.type);
+                const itype = String(item.type || '').toUpperCase();
+                if (itype === 'THINK' || itype === 'REASONING') {
+                  if (item.content) emitToken(item.content, 'think');
+                } else if (itype === 'RESPONSE' || itype === 'TEMPLATE_RESPONSE') {
+                  if (item.content) emitToken(item.content, 'content');
+                } else if (item.content) {
+                  emitToken(item.content);
+                }
+              } else if (typeof item === 'string') {
+                emitToken(item);
+              }
+            }
+            continue;
+          }
+
+          // Path + value token
+          if (typeof evt.v === 'string' && typeof evt.p === 'string') {
+            const isSearchPath = /search/i.test(evt.p);
+            const fragMatch = evt.p.match(/fragments\/(-?\d+)/i);
+            const knownType = fragMatch ? fragTypeByIndex[fragMatch[1]] : null;
+            const isContentPath = /fragments\/-?\d+\/content/i.test(evt.p);
+            const isThinkPath =
+              knownType === 'THINK'
+              || knownType === 'REASONING'
+              || (/think|reasoning/i.test(evt.p) && !isContentPath);
+            const isResponsePath =
+              knownType === 'RESPONSE'
+              || knownType === 'TEMPLATE_RESPONSE'
+              || (/RESPONSE/i.test(evt.p) && !/think/i.test(evt.p))
+              || (
+                isContentPath
+                && knownType !== 'THINK'
+                && knownType !== 'REASONING'
+                && knownType !== 'SEARCH'
+                && knownType !== 'TOOL_SEARCH'
+                && knownType !== 'TOOL_OPEN'
+              );
+
+            if (isSearchPath || knownType === 'SEARCH' || knownType === 'TOOL_SEARCH') {
+              sawSearchPhase = true;
+              continue;
+            } else if (
+              isResponsePath
+              || (isContentPath && (!isExpert || sawResponseFragment || !inThinking))
+            ) {
+              sawResponseFragment = true;
+              inThinking = false;
+              emitToken(evt.v, 'content');
+            } else if (isThinkPath || (isExpert && inThinking && !sawResponseFragment)) {
+              inThinking = true;
+              emitToken(evt.v, 'think');
+            } else if (/status|token|title|session|elapsed/i.test(evt.p)) {
+              // metadata
+            } else if (isExpert && !sawResponseFragment) {
+              emitToken(evt.v, 'think');
+            } else {
+              emitToken(evt.v, 'content');
+            }
+            continue;
+          }
+
+          // Bare string token
+          if (typeof evt.v === 'string' && !evt.p && !evt.o) {
+            if (isExpert && !sawResponseFragment) emitToken(evt.v, 'think');
+            else emitToken(evt.v);
+            continue;
+          }
+
+          // status SET FINISHED
+          if (
+            evt.p
+            && /status$/i.test(evt.p)
+            && (evt.v === 'FINISHED' || evt.v === 'CONTENT_FILTER')
+          ) {
+            if (
+              (searchEnabled || wantSearch || sawSearchPhase)
+              && !sawResponseContent
+              && responseChars < 80
+            ) {
+              console.log('[deepseek] ignore early FINISHED during search; waiting for answer');
+              resetIdleTimer();
+              continue;
+            }
+            streamDone = true;
+            break;
+          }
+        } catch {
+          // ignore malformed SSE frames
+        }
+      }
+    }
+  }
+  clearTimeout(idleTimer);
+  try { reader.cancel(); } catch {}
+
+  return {
+    responseChars,
+    thinkingChars,
+    responseMessageId,
+    sawResponseContent,
+    sawSearchPhase,
+    timedOut,
+  };
+}
+
 async function deepseekProxy(opts, res) {
   // Only real reasoner IDs / explicit thinking flag — NOT plain "deepseek"/"deepseek-chat"
-  // (that mapped every reply into reasoning_content and left content empty for clients).
   const modelName = String(opts.model || 'deepseek').toLowerCase();
   const isExpert =
     modelName === 'deepseek-expert'
@@ -170,7 +504,7 @@ async function deepseekProxy(opts, res) {
   });
 
   const { message, session_id, system_prompt, history } = extractMessages(opts);
-  let activeSessionId = session_id || '';
+  let activeLocalSession = session_id || activeSessionId || '';
   let abortCtrl = null;
 
   const onClientClose = () => {
@@ -185,7 +519,6 @@ async function deepseekProxy(opts, res) {
   }
 
   try {
-    // Commit SSE immediately so TTFB timers never abort us during PoW/session setup.
     res.statusCode = 200;
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -198,7 +531,7 @@ async function deepseekProxy(opts, res) {
     }
 
     // 1. Session
-    if (!activeSessionId) {
+    if (!activeLocalSession) {
       const createRes = await fetch(`${DEEPSEEK_URL}/api/v0/chat_session/create`, {
         method: 'POST',
         headers: DS_HEADERS(),
@@ -209,46 +542,17 @@ async function deepseekProxy(opts, res) {
         throw new Error(`Session create failed: ${createRes.status} ${t.slice(0, 120)}`);
       }
       const createData = await createRes.json();
-      activeSessionId =
+      activeLocalSession =
         createData?.data?.biz_data?.chat_session?.id
         || createData?.data?.biz_data?.id
         || createData?.data?.id
         || createData?.biz_data?.id
         || '';
-      if (!activeSessionId) throw new Error('No session ID returned from create');
+      if (!activeLocalSession) throw new Error('No session ID returned from create');
+      activeSessionId = activeLocalSession;
     }
 
-    // 2. PoW challenge
-    const challengeRes = await fetch(`${DEEPSEEK_URL}/api/v0/chat/create_pow_challenge`, {
-      method: 'POST',
-      headers: DS_HEADERS(),
-      body: JSON.stringify({ target_path: '/api/v0/chat/completion' }),
-    });
-    if (!challengeRes.ok) {
-      const t = await challengeRes.text().catch(() => '');
-      throw new Error(`Challenge fetch failed: ${challengeRes.status} ${t.slice(0, 120)}`);
-    }
-    const challengeData = await challengeRes.json();
-    const challenge =
-      challengeData?.data?.biz_data?.challenge
-      || challengeData?.biz_data?.challenge
-      || challengeData?.data?.challenge;
-    if (!challenge || !challenge.challenge) {
-      throw new Error('Invalid challenge data: ' + JSON.stringify(challengeData).slice(0, 200));
-    }
-
-    // 3. Solve PoW (worker thread, 45s budget)
-    const answer = await solveChallengeAsync(challenge);
-    const powHeader = buildPowHeader(
-      answer,
-      challenge.challenge,
-      challenge.salt,
-      challenge.signature,
-      challenge.target_path || '/api/v0/chat/completion'
-    );
-
-    const prompt = buildPrompt(system_prompt, history, message);
-    // Client-supplied OpenAI tools → do NOT also force DeepSeek built-in web search
+    const basePrompt = buildPrompt(system_prompt, history, message);
     const hasClientTools = Array.isArray(opts.tools) && opts.tools.length > 0;
     const wantSearch =
       opts.search_enabled === true
@@ -256,352 +560,134 @@ async function deepseekProxy(opts, res) {
       || /\b(web\s*search|search the web|do a (web )?search|google|look up|find online|list .{0,40} websites?)\b/i.test(
         message || ''
       );
-    // Only enable DS search when explicitly requested / model says search / prompt asks —
-    // never default-on (that caused early FINISHED + "closed before final answer after search").
-    // When client sends tools[], leave search off so the client drives tool_calls.
     const searchEnabled =
       hasClientTools
         ? false
         : opts.search_enabled === false
           ? false
           : !!(wantSearch || opts.search_enabled === true);
-    // Post-search generation can be slow; keep idle generous
     const idleMs = searchEnabled || wantSearch ? 240000 : 120000;
 
     abortCtrl = new AbortController();
     res.on?.('close', onClientClose);
 
-    // 4. Completion stream
-    const chatRes = await fetch(`${DEEPSEEK_URL}/api/v0/chat/completion`, {
-      method: 'POST',
-      headers: { ...DS_HEADERS(), 'x-ds-pow-response': powHeader },
-      signal: abortCtrl.signal,
-      body: JSON.stringify({
-        chat_session_id: activeSessionId,
-        parent_message_id: opts.parent_message_id || null,
-        model_type: isExpert ? 'expert' : 'default',
+    let parentMessageId = opts.parent_message_id || null;
+    let totalContent = 0;
+    let lastStats = { responseChars: 0, thinkingChars: 0, sawSearchPhase: false, timedOut: false };
+    let attempt = 0;
+
+    while (attempt <= EMPTY_RETRY_MAX) {
+      const prompt =
+        attempt === 0
+          ? basePrompt
+          : (basePrompt.trimEnd() + '\n\n' + EMPTY_RETRY_SUFFIX);
+      // On empty retry: disable thinking so we force a visible answer (ds2api-style recovery)
+      const thinkingThis = attempt === 0 ? !!isExpert : false;
+
+      const powHeader = await createPowHeader();
+      const body = {
+        chat_session_id: activeLocalSession,
+        parent_message_id: parentMessageId || null,
+        model_type: isExpert && attempt === 0 ? 'expert' : 'default',
         prompt,
         ref_file_ids: [],
-        thinking_enabled: !!isExpert,
-        search_enabled: searchEnabled,
+        thinking_enabled: thinkingThis,
+        search_enabled: attempt === 0 ? searchEnabled : false,
         action: null,
         preempt: false,
-      }),
-    });
+      };
 
-    if (!chatRes.ok) {
-      const errText = await chatRes.text().catch(() => '');
-      const msg = `DeepSeek chat failed (${chatRes.status}): ${errText.slice(0, 200)}`;
-      if (/401|403|40003|invalid token|expired|muted/i.test(msg) && rotateAccount(msg)) {
-        throw new Error(msg + ' (rotated account — retry request)');
+      const chatRes = await fetch(`${DEEPSEEK_URL}/api/v0/chat/completion`, {
+        method: 'POST',
+        headers: { ...DS_HEADERS(), 'x-ds-pow-response': powHeader },
+        signal: abortCtrl.signal,
+        body: JSON.stringify(body),
+      });
+
+      if (!chatRes.ok) {
+        const errText = await chatRes.text().catch(() => '');
+        const msg = `DeepSeek chat failed (${chatRes.status}): ${errText.slice(0, 200)}`;
+        if (/401|403|40003|invalid token|expired|muted/i.test(msg) && rotateAccount(msg)) {
+          throw new Error(msg + ' (rotated account — retry request)');
+        }
+        if (/401|403|429|502|503/i.test(String(chatRes.status))) {
+          activeSessionId = null;
+          activeLocalSession = '';
+        }
+        throw new Error(msg);
       }
-      // reset session on transient failures
-      if (/401|403|429|502|503/i.test(String(chatRes.status))) activeSessionId = null;
-      throw new Error(msg);
-    }
 
-    const ctype = (chatRes.headers.get('content-type') || '').toLowerCase();
-    if (ctype.includes('application/json')) {
-      const errText = await chatRes.text().catch(() => '');
-      let msg = 'non-streaming response';
-      try {
-        const j = JSON.parse(errText);
-        const bd = j?.data;
-        if (j.code !== undefined && j.code !== 0) msg = `${j.msg || 'code ' + j.code}`;
-        else if (bd && (bd.biz_code || bd.biz_msg)) {
-          msg = bd.biz_msg || String(bd.biz_code);
-          if (bd.is_muted && bd.mute_until) {
-            msg += ` (muted until ${new Date(bd.mute_until * 1000).toUTCString()})`;
+      const ctype = (chatRes.headers.get('content-type') || '').toLowerCase();
+      if (ctype.includes('application/json')) {
+        const errText = await chatRes.text().catch(() => '');
+        let msg = 'non-streaming response';
+        try {
+          const j = JSON.parse(errText);
+          const bd = j?.data;
+          if (j.code !== undefined && j.code !== 0) msg = `${j.msg || 'code ' + j.code}`;
+          else if (bd && (bd.biz_code || bd.biz_msg)) {
+            msg = bd.biz_msg || String(bd.biz_code);
+            if (bd.is_muted && bd.mute_until) {
+              msg += ` (muted until ${new Date(bd.mute_until * 1000).toUTCString()})`;
+            }
           }
-        }
-      } catch {}
-      throw new Error(msg);
-    }
-
-    const reader = chatRes.body.getReader();
-    const decoder = new TextDecoder();
-    let sseBuffer = '';
-    let dsEvent = '';
-    let streamDone = false;
-    // Start in thinking channel when thinking is enabled; switch to content only on RESPONSE fragments.
-    let inThinking = !!isExpert;
-    let sawResponseFragment = false; // true once a RESPONSE-type fragment appears
-    let sawResponseContent = false;
-    let sawSearchPhase = false;
-    let responseChars = 0;
-    const fragTypeByIndex = Object.create(null); // index -> 'THINK' | 'RESPONSE' | 'SEARCH'
-    const SEARCH_ANN = /I('ll| will) use the search tool|searching the web|web search tool|^SEARCH\b|^WEB_SEARCH\b|^SEARCHING\b/i;
-
-    function emitToken(text, forceChannel) {
-      if (!text) return;
-      const channel = forceChannel || (sawResponseFragment || !inThinking ? 'content' : 'think');
-      if (channel === 'think') {
-        emitOpenAI({ reasoning_content: text });
-      } else {
-        if (SEARCH_ANN.test(text) && text.length < 120) {
-          sawSearchPhase = true;
-          emitOpenAI({ content: text });
-        } else {
-          sawResponseContent = true;
-          responseChars += text.length;
-          emitOpenAI({ content: text });
-        }
+        } catch {}
+        throw new Error(msg);
       }
-    }
 
-    function noteFragType(idx, type) {
-      const t = String(type || '').toUpperCase();
-      if (!t) return;
-      fragTypeByIndex[idx] = t;
-      if (t === 'THINK' || t === 'REASONING') inThinking = true;
-      if (t === 'RESPONSE') {
-        inThinking = false;
-        sawResponseFragment = true;
+      lastStats = await consumeDeepSeekSSE(chatRes, {
+        emitOpenAI,
+        isExpert: thinkingThis,
+        searchEnabled: body.search_enabled,
+        wantSearch,
+        idleMs,
+        signal: abortCtrl.signal,
+      });
+      totalContent += lastStats.responseChars;
+      if (lastStats.responseMessageId) {
+        parentMessageId = lastStats.responseMessageId;
       }
-      if (t === 'SEARCH' || t === 'SEARCH_RESULT' || t === 'WEB_SEARCH') sawSearchPhase = true;
-    }
 
-    let idleTimer = null;
-    let timedOut = false;
-    const resetIdleTimer = () => {
-      clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => {
-        timedOut = true;
-        streamDone = true;
-        try { reader.cancel(); } catch {}
-      }, idleMs);
-    };
+      console.log(
+        '[deepseek] attempt=%s model=%s contentChars=%s thinkChars=%s search=%s timedOut=%s msgId=%s',
+        attempt,
+        opts.model,
+        lastStats.responseChars,
+        lastStats.thinkingChars,
+        !!(searchEnabled || lastStats.sawSearchPhase),
+        lastStats.timedOut,
+        lastStats.responseMessageId || 0
+      );
 
-    while (!streamDone) {
-      resetIdleTimer();
-      let chunk;
-      try {
-        chunk = await reader.read();
-      } catch {
+      if (lastStats.responseChars > 0 || lastStats.timedOut || abortCtrl.signal.aborted) {
         break;
       }
-      clearTimeout(idleTimer);
-      const { done, value } = chunk;
-      if (done) break;
-      sseBuffer += decoder.decode(value, { stream: true });
-      const lines = sseBuffer.split('\n');
-      sseBuffer = lines.pop();
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        if (trimmed.startsWith('event: ')) {
-          dsEvent = trimmed.slice(7).trim();
-          continue;
-        }
-
-        if (trimmed.startsWith('data: ')) {
-          const raw = trimmed.slice(6).trim();
-          const evtType = dsEvent;
-          dsEvent = '';
-
-          if (evtType === 'close') {
-            // Upstream closed the SSE. If we only saw search/tool scaffolding, keep waiting
-            // for a bit is impossible after close — emit a clear error, not a fake empty success.
-            if ((searchEnabled || wantSearch || sawSearchPhase) && !sawResponseContent) {
-              emitOpenAI({
-                content: '\n\n[Error: DeepSeek closed before final answer after search]',
-              });
-              console.log('[deepseek] event:close without final content (search phase=%s chars=%s)', sawSearchPhase, responseChars);
-            } else if (!sawResponseContent && responseChars < 1) {
-              emitOpenAI({ content: '\n\n[Error: DeepSeek stream closed with empty reply]' });
-            }
-            emitOpenAI({}, 'stop');
-            safeWrite('data: [DONE]\n\n');
-            streamDone = true;
-            break;
-          }
-          if (evtType === 'ready' || evtType === 'update_session' || evtType === 'title') continue;
-
-          try {
-            const evt = JSON.parse(raw);
-
-            // Terminal BATCH with FINISHED
-            if (
-              (evt.o === 'BATCH' || (Array.isArray(evt.v) && evt.p === 'response'))
-              && Array.isArray(evt.v)
-              && evt.v.some((item) =>
-                (item.p === 'quasi_status' || item.p === 'status')
-                && (item.v === 'FINISHED' || item.v === 'CONTENT_FILTER')
-              )
-            ) {
-              if ((searchEnabled || wantSearch || sawSearchPhase) && !sawResponseContent && responseChars < 80) {
-                console.log('[deepseek] ignore early BATCH FINISHED during search; keep reading');
-                resetIdleTimer();
-                continue;
-              }
-              emitOpenAI({}, 'stop');
-              safeWrite('data: [DONE]\n\n');
-              streamDone = true;
-              break;
-            }
-
-            // Initial envelope with fragments
-            // Search results path
-            if (
-              evt.p === 'response/search_results'
-              || (typeof evt.p === 'string' && /search_results|\/results$/i.test(evt.p))
-            ) {
-              sawSearchPhase = true;
-              const n = Array.isArray(evt.v) ? evt.v.length : 0;
-              if (n) emitOpenAI({ content: `\n[Found ${n} web page(s)]\n` });
-              continue;
-            }
-
-            // Track fragment type assignments: response/fragments/0/type
-            if (typeof evt.p === 'string') {
-              const tm = evt.p.match(/fragments\/(-?\d+)\/type$/i);
-              if (tm && (typeof evt.v === 'string' || typeof evt.v === 'number')) {
-                noteFragType(tm[1], evt.v);
-                continue;
-              }
-            }
-
-            // fragments envelope
-            if (evt.v && evt.v.response && Array.isArray(evt.v.response.fragments)) {
-              evt.v.response.fragments.forEach((frag, i) => {
-                if (frag && frag.type) noteFragType(String(i), frag.type);
-              });
-              for (const frag of evt.v.response.fragments) {
-                const ftype = String(frag.type || '').toUpperCase();
-                if (ftype === 'SEARCH' || ftype === 'SEARCH_RESULT' || ftype === 'WEB_SEARCH') {
-                  sawSearchPhase = true;
-                  if (frag.content) emitOpenAI({ content: frag.content });
-                  continue;
-                }
-                if (ftype === 'THINK' || ftype === 'REASONING') {
-                  inThinking = true;
-                  if (frag.content) emitToken(frag.content, 'think');
-                } else if (ftype === 'RESPONSE') {
-                  sawResponseFragment = true;
-                  inThinking = false;
-                  if (frag.content) emitToken(frag.content, 'content');
-                } else if (frag.content) {
-                  emitToken(frag.content);
-                }
-              }
-            }
-
-            // APPEND array of fragment-like items
-            if (evt.o === 'APPEND' && Array.isArray(evt.v)) {
-              for (const item of evt.v) {
-                if (item && item.type) {
-                  // Sometimes APPEND includes full fragment objects with id/type/content
-                  if (item.id != null) noteFragType(String(item.id), item.type);
-                }
-                const itype = String(item.type || '').toUpperCase();
-                if (itype === 'SEARCH' || itype === 'SEARCH_RESULT' || itype === 'WEB_SEARCH') {
-                  sawSearchPhase = true;
-                  if (item.content) emitOpenAI({ content: item.content });
-                  continue;
-                }
-                if (itype === 'THINK' || itype === 'REASONING') {
-                  inThinking = true;
-                  if (item.content) emitToken(item.content, 'think');
-                } else if (itype === 'RESPONSE') {
-                  sawResponseFragment = true;
-                  inThinking = false;
-                  if (item.content) emitToken(item.content, 'content');
-                } else if (typeof item === 'string') {
-                  emitToken(item);
-                } else if (item && item.content) {
-                  emitToken(item.content);
-                }
-              }
-              continue;
-            }
-
-            // Path-based string tokens (critical: do NOT treat all /content paths as final answer)
-            if (evt.p && typeof evt.v === 'string') {
-              const isSearchPath = /search/i.test(evt.p);
-              const fragMatch = evt.p.match(/fragments\/(-?\d+)/i);
-              const fragIdx = fragMatch ? fragMatch[1] : null;
-              const knownType = fragIdx != null ? fragTypeByIndex[fragIdx] : null;
-              const isContentPath = /fragments\/-?\d+\/content/i.test(evt.p);
-              const isThinkPath =
-                knownType === 'THINK'
-                || knownType === 'REASONING'
-                || (/think|reasoning/i.test(evt.p) && !isContentPath);
-              const isResponsePath =
-                knownType === 'RESPONSE'
-                || knownType === 'TEMPLATE_RESPONSE'
-                || (/RESPONSE/i.test(evt.p) && !/think/i.test(evt.p))
-                || (isContentPath && knownType !== 'THINK' && knownType !== 'REASONING'
-                    && knownType !== 'SEARCH' && knownType !== 'TOOL_SEARCH'
-                    && knownType !== 'TOOL_OPEN');
-
-              if (isSearchPath || knownType === 'SEARCH' || knownType === 'TOOL_SEARCH') {
-                sawSearchPhase = true;
-                // Don't treat tool/search meta as final answer
-                continue;
-              } else if (isResponsePath || (isContentPath && (!isExpert || sawResponseFragment || !inThinking))) {
-                sawResponseFragment = true;
-                inThinking = false;
-                emitToken(evt.v, 'content');
-              } else if (isThinkPath || (isExpert && inThinking && !sawResponseFragment)) {
-                inThinking = true;
-                emitToken(evt.v, 'think');
-              } else if (/status|token|title|session|elapsed/i.test(evt.p)) {
-                // ignore metadata paths
-              } else if (isExpert && !sawResponseFragment) {
-                emitToken(evt.v, 'think');
-              } else {
-                emitToken(evt.v, 'content');
-              }
-              continue;
-            }
-
-            // Bare string token (no path)
-            if (typeof evt.v === 'string' && !evt.p && !evt.o) {
-              if (isExpert && !sawResponseFragment) emitToken(evt.v, 'think');
-              else emitToken(evt.v);
-              continue;
-            }
-
-            // status SET FINISHED
-            if (evt.p && /status$/i.test(evt.p) && (evt.v === 'FINISHED' || evt.v === 'CONTENT_FILTER')) {
-              if ((searchEnabled || wantSearch || sawSearchPhase) && !sawResponseContent && responseChars < 80) {
-                console.log('[deepseek] ignore early FINISHED during search; waiting for answer');
-                resetIdleTimer();
-                continue;
-              }
-              emitOpenAI({}, 'stop');
-              safeWrite('data: [DONE]\n\n');
-              streamDone = true;
-              break;
-            }
-          } catch {
-            // ignore malformed SSE frames
-          }
-        }
+      // Empty visible output → same-session retry (ds2api EmptyOutputRetry)
+      attempt += 1;
+      if (attempt <= EMPTY_RETRY_MAX) {
+        console.log('[deepseek] empty visible output — same-session retry %s/%s', attempt, EMPTY_RETRY_MAX);
       }
     }
-    clearTimeout(idleTimer);
-    res.removeListener?.('close', onClientClose);
-    console.log(
-      '[deepseek] stream complete model=%s expert=%s contentChars=%s search=%s timedOut=%s',
-      opts.model, isExpert, responseChars, !!(searchEnabled || sawSearchPhase), timedOut
-    );
+
     if (!res.writableEnded) {
-      if (!streamDone || timedOut) {
-        if ((searchEnabled || wantSearch || sawSearchPhase) && !sawResponseContent) {
+      if (totalContent < 1) {
+        if (lastStats.sawSearchPhase) {
           emitOpenAI({
             content: '\n\n[Error: DeepSeek closed before final answer after search]',
           });
-        } else if (!sawResponseContent && responseChars < 1) {
+        } else if (lastStats.thinkingChars > 0) {
+          emitOpenAI({
+            content:
+              '\n\n[Error: DeepSeek returned reasoning only (no visible answer). Try model deepseek-chat or disable thinking.]',
+          });
+        } else {
           emitOpenAI({
             content: '\n\n[Error: DeepSeek stream closed with empty reply]',
           });
         }
-        emitOpenAI({}, 'stop');
-        safeWrite('data: [DONE]\n\n');
       }
+      emitOpenAI({}, 'stop');
+      safeWrite('data: [DONE]\n\n');
       try { res.end(); } catch {}
     }
   } catch (err) {
@@ -614,6 +700,8 @@ async function deepseekProxy(opts, res) {
     safeWrite(`data: ${mkChunk({}, 'stop')}\n\n`);
     safeWrite('data: [DONE]\n\n');
     try { res.end(); } catch {}
+  } finally {
+    res.removeListener?.('close', onClientClose);
   }
 }
 
