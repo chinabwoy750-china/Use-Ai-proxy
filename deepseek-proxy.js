@@ -48,7 +48,12 @@ let ACCOUNTS = loadAccounts().map((a, i) => ({
   ...a,
   id: a.id || `acc${i}`,
   sessionId: null,
+  deadUntil: 0, // timestamp ms — skip until then after 40003
 }));
+const AUTH_COOLDOWN_MS = Math.max(
+  60_000,
+  parseInt(process.env.DEEPSEEK_AUTH_COOLDOWN_MS || String(15 * 60 * 1000), 10) || 900_000
+);
 let accountIndex = 0;
 
 // --- Account pool: inflight slots + wait queue (ds2api-inspired) ---
@@ -65,11 +70,38 @@ const waiters = []; // { resolve, reject, timer }
 function poolStats() {
   let used = 0;
   for (const v of inflight.values()) used += v;
-  return { accounts: ACCOUNTS.length, inflight: used, queue: waiters.length, maxInflight: MAX_INFLIGHT, maxQueue: MAX_QUEUE };
+  const now = Date.now();
+  const dead = ACCOUNTS.filter((a) => a.deadUntil && a.deadUntil > now).length;
+  return {
+    accounts: ACCOUNTS.length,
+    dead,
+    inflight: used,
+    queue: waiters.length,
+    maxInflight: MAX_INFLIGHT,
+    maxQueue: MAX_QUEUE,
+  };
 }
 
 function canAcquire(id) {
+  const acc = ACCOUNTS.find((a) => a.id === id);
+  if (acc && acc.deadUntil && Date.now() < acc.deadUntil) return false;
   return (inflight.get(id) || 0) < MAX_INFLIGHT;
+}
+
+function markAccountDead(acc, reason) {
+  if (!acc) return;
+  acc.deadUntil = Date.now() + AUTH_COOLDOWN_MS;
+  acc.sessionId = null;
+  console.log(
+    '[deepseek] account marked dead id=%s for %ss reason=%s',
+    acc.id,
+    Math.round(AUTH_COOLDOWN_MS / 1000),
+    reason || ''
+  );
+}
+
+function isAuthFailure(text) {
+  return /40003|40002|invalid token|authorization failed|missing token|expired/i.test(String(text || ''));
 }
 
 function tryAcquireLocked(exclude) {
@@ -239,10 +271,30 @@ async function createPowHeader(acc) {
     throw new Error(`Challenge fetch failed: ${challengeRes.status} ${t.slice(0, 120)}`);
   }
   const challengeData = await challengeRes.json();
+  // Auth failures often return HTTP 200 with code 40003
+  if (
+    challengeData
+    && (challengeData.code === 40003 || challengeData.code === 40002
+        || isAuthFailure(challengeData.msg || ''))
+  ) {
+    const err = new Error(
+      `Authorization Failed (${challengeData.msg || challengeData.code}) — token expired; refresh DEEPSEEK_TOKEN/COOKIE`
+    );
+    err.code = 401;
+    err.auth = true;
+    throw err;
+  }
   // DeepSeek shape: { data: { biz_data: { challenge: { algorithm, challenge, salt, difficulty, signature, target_path } } } }
   const challenge = extractPowChallenge(challengeData);
   if (!challenge || !challenge.challenge) {
-    throw new Error('Invalid challenge data: ' + JSON.stringify(challengeData).slice(0, 300));
+    const raw = JSON.stringify(challengeData).slice(0, 300);
+    if (isAuthFailure(raw)) {
+      const err = new Error('Authorization Failed (invalid token) — refresh DEEPSEEK_TOKEN/COOKIE');
+      err.code = 401;
+      err.auth = true;
+      throw err;
+    }
+    throw new Error('Invalid challenge data: ' + raw);
   }
   if (challenge.difficulty == null || challenge.difficulty === '') {
     // ds2api default when field missing
@@ -744,7 +796,49 @@ async function deepseekProxy(opts, res) {
       // On empty retry: disable thinking so we force a visible answer (ds2api-style recovery)
       const thinkingThis = attempt === 0 ? !!isExpert : false;
 
-      const powHeader = await createPowHeader(leased);
+      let powHeader;
+      try {
+        powHeader = await createPowHeader(leased);
+      } catch (e) {
+        if (e && (e.auth || isAuthFailure(e.message))) {
+          markAccountDead(leased, e.message);
+          releaseAccount(leased);
+          leased = null;
+          // try another account
+          try {
+            leased = await acquireAccount();
+            console.log('[deepseek] auth fail — switched to', leased.id);
+            activeLocalSession = leased.sessionId || '';
+            if (!activeLocalSession) {
+              const createRes2 = await fetch(`${DEEPSEEK_URL}/api/v0/chat_session/create`, {
+                method: 'POST',
+                headers: DS_HEADERS(leased),
+                body: '{}',
+              });
+              if (!createRes2.ok) {
+                const t2 = await createRes2.text().catch(() => '');
+                throw new Error(`Session create failed: ${createRes2.status} ${t2.slice(0, 120)}`);
+              }
+              const createData2 = await createRes2.json();
+              activeLocalSession =
+                createData2?.data?.biz_data?.chat_session?.id
+                || createData2?.data?.biz_data?.id
+                || createData2?.data?.id
+                || createData2?.biz_data?.id
+                || '';
+              if (leased) leased.sessionId = activeLocalSession;
+            }
+            powHeader = await createPowHeader(leased);
+          } catch (e2) {
+            throw new Error(
+              (e2 && e2.message) || e.message
+              || 'All DeepSeek tokens invalid/expired — update DEEPSEEK_TOKEN and DEEPSEEK_COOKIE on Render'
+            );
+          }
+        } else {
+          throw e;
+        }
+      }
       const body = {
         chat_session_id: activeLocalSession,
         parent_message_id: parentMessageId || null,
@@ -767,8 +861,9 @@ async function deepseekProxy(opts, res) {
       if (!chatRes.ok) {
         const errText = await chatRes.text().catch(() => '');
         const msg = `DeepSeek chat failed (${chatRes.status}): ${errText.slice(0, 200)}`;
-        if (/401|403|40003|invalid token|expired|muted/i.test(msg) && rotateAccount(msg)) {
-          throw new Error(msg + ' (rotated account — retry request)');
+        if (isAuthFailure(msg)) {
+          markAccountDead(leased, msg);
+          throw new Error(msg + ' — token expired; refresh DEEPSEEK_TOKEN/COOKIE or add more accounts');
         }
         if (/401|403|429|502|503/i.test(String(chatRes.status))) {
           if (leased) leased.sessionId = null;
@@ -792,6 +887,9 @@ async function deepseekProxy(opts, res) {
             }
           }
         } catch {}
+        if (isAuthFailure(msg) || isAuthFailure(errText)) {
+          markAccountDead(leased, msg);
+        }
         throw new Error(msg);
       }
 
