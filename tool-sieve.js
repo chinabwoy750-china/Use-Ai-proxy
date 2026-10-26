@@ -120,31 +120,47 @@ function buildToolInstructions(tools) {
     .filter(Boolean);
   const nameList = names.length ? names.join(', ') : 'available tools';
   const schemas = toolSchemaBlurb(tools);
+  // Keep markers short; models (esp. Kimi) often partially echo long [SYSTEM] blocks.
   return (
-    `[SYSTEM — DO NOT ECHO THIS BLOCK]\n` +
-    `You can call tools when needed: ${nameList}.\n` +
-    (schemas ? `Tool schemas:\n${schemas}\n` : '') +
-    `To call a tool, output ONLY this XML (no markdown fences, do not repeat these instructions):\n` +
+    `<tools_spec hidden="1">\n` +
+    `Tools: ${nameList}.\n` +
+    (schemas ? `Schemas:\n${schemas}\n` : '') +
+    `When a tool is required, reply with ONLY:\n` +
     `<|DSML|tool_calls>\n` +
     `  <|DSML|invoke name="TOOL_NAME">\n` +
     `    <|DSML|parameter name="ARG"><![CDATA[VALUE]]></|DSML|parameter>\n` +
     `  </|DSML|invoke>\n` +
     `</|DSML|tool_calls>\n` +
-    `For device/system questions (storage, files, shell, network), you MUST call a tool instead of guessing.\n` +
-    `For normal chat with no tool needed, reply in plain text only.\n` +
-    `[END SYSTEM]\n`
+    `Never invent disk/files/shell facts — call a tool. Plain text only when no tool is needed.\n` +
+    `</tools_spec>\n`
   );
 }
 
-/** Strip leaked instruction prefixes from model output */
+/** Strip leaked instruction prefixes from model output (full + partial echoes). */
 function stripInstructionLeak(text) {
   if (!text) return '';
   let s = String(text);
-  // Full instruction block echo
-  s = s.replace(
-    /\[SYSTEM[\s\S]*?\[END SYSTEM\]\s*/i,
-    ''
-  );
+
+  // New tools_spec wrapper (full + partial)
+  s = s.replace(/<tools_spec\b[^>]*>[\s\S]*?<\/tools_spec>\s*/gi, '');
+  s = s.replace(/<tools_spec\b[^>]*>[\s\S]*$/gi, '');
+  s = s.replace(/<\/tools_spec>\s*/gi, '');
+
+  // Legacy [SYSTEM]…[END SYSTEM] full block
+  s = s.replace(/\[SYSTEM[\s\S]*?\[END SYSTEM\]\s*/gi, '');
+  // Partial Kimi leak: "[SYSTEM — DO NOT ECHO THIS BLO" glued to real text
+  s = s.replace(/\[SYSTEM\s*[—\-–]*\s*DO NOT ECHO THIS BLO(?:CK)?/gi, '');
+  s = s.replace(/\[SYSTEM[^\]\n]{0,100}\]/g, '');
+  s = s.replace(/\[END SYSTEM\]\s*/gi, '');
+  s = s.replace(/DO NOT ECHO THIS BLOCK\]?/gi, '');
+  s = s.replace(/DO NOT ECHO THIS BLO(?:CK)?/gi, '');
+
+  // DSML instruction echo
+  s = s.replace(/To call a tool, output ONLY this XML[\s\S]{0,400}?<\/\|DSML\|tool_calls>/gi, '');
+  s = s.replace(/You can call tools when needed:[^\n]*\n?/gi, '');
+  s = s.replace(/For device\/system questions[^\n]*\n?/gi, '');
+  s = s.replace(/For normal chat with no tool needed[^\n]*\n?/gi, '');
+
   s = s.replace(
     /TOOL CALL FORMAT[\s\S]*?(?:no tool XML\.?\s*)/i,
     ''
@@ -153,9 +169,11 @@ function stripInstructionLeak(text) {
     /^[\s\S]{0,40}?TOOL CALL FORMAT[^\n]*\n?/i,
     ''
   );
-  // Partial "FOLLOW EXAC..." leak at start
   s = s.replace(/^\s*TOOL CALL FORMAT[^\n]*\n?/i, '');
   s = s.replace(/^\s*FOLLOW EXAC[A-Z]*\s*/i, '');
+
+  // If reply still starts mid-word after a strip (e.g. " there! I'm Kimi")
+  // leave as-is — client may have partial stream; only trim pure junk prefixes
   return s;
 }
 
