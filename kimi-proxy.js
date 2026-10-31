@@ -206,8 +206,34 @@ module.exports = async function kimiProxy(opts, res) {
       model,
       choices: [{ index: 0, delta, finish_reason: finish }],
     });
+  const wantStream = opts.stream !== false;
+  let nsContent = '';
+  let nsReasoning = '';
+  let nsToolCalls = [];
+  let nsFinish = 'stop';
+
   const safeWrite = (d) => {
     if (res.destroyed || res.writableEnded) return;
+    if (!wantStream) {
+      try {
+        const line = String(d || '');
+        for (const part of line.split('\n')) {
+          const tr = part.trim();
+          if (!tr.startsWith('data:')) continue;
+          const raw = tr.slice(5).trim();
+          if (!raw || raw === '[DONE]') continue;
+          const j = JSON.parse(raw);
+          const delta = (j.choices && j.choices[0] && j.choices[0].delta) || {};
+          if (delta.content) nsContent += delta.content;
+          if (delta.reasoning_content) nsReasoning += delta.reasoning_content;
+          if (Array.isArray(delta.tool_calls)) nsToolCalls.push(...delta.tool_calls);
+          if (j.choices && j.choices[0] && j.choices[0].finish_reason) {
+            nsFinish = j.choices[0].finish_reason;
+          }
+        }
+      } catch {}
+      return;
+    }
     try { res.write(d); } catch {}
   };
 
@@ -215,11 +241,15 @@ module.exports = async function kimiProxy(opts, res) {
     if (!pool.length) throw new Error('Set KIMI_REFRESH_TOKEN or KIMI_REFRESH_TOKENS (comma-separated)');
 
     res.statusCode = 200;
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
     res.setHeader('Access-Control-Allow-Origin', '*');
-    safeWrite(`data: ${mk({ role: 'assistant', content: '' })}\n\n`);
+    if (wantStream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      safeWrite(`data: ${mk({ role: 'assistant', content: '' })}\n\n`);
+    } else {
+      res.setHeader('Content-Type', 'application/json');
+    }
 
     let prompt = lastUser(opts.messages);
     const hasTools = Array.isArray(opts.tools) && opts.tools.length > 0;
@@ -358,8 +388,17 @@ module.exports = async function kimiProxy(opts, res) {
             text = evt.message.content;
           }
           if (typeof text !== 'string' || !text) continue;
-          // Skip pure role / empty assistant openers
-          if (!sawAssistant && text.trim() === prompt.trim()) continue;
+          // Only skip long prompt echoes (tool system blocks). Short user
+          // messages like "Hi" must NOT be treated as echoes — that was
+          // dropping the first token and yielding " there! I'm Kimi…".
+          if (
+            !sawAssistant &&
+            prompt &&
+            prompt.trim().length >= 80 &&
+            text.trim() === prompt.trim()
+          ) {
+            continue;
+          }
           // Skip if this chunk was already handled as reasoning-only
           if (reason && text === reason) continue;
           sawAssistant = true;
@@ -405,10 +444,36 @@ module.exports = async function kimiProxy(opts, res) {
     }
     safeWrite(`data: ${mk({}, finish)}\n\n`);
     safeWrite('data: [DONE]\n\n');
+    if (!wantStream) {
+      const message = { role: 'assistant', content: nsContent || null };
+      if (nsReasoning) message.reasoning_content = nsReasoning;
+      if (nsToolCalls.length) {
+        message.tool_calls = nsToolCalls;
+        message.content = message.content || null;
+      }
+      const payload = {
+        id: chatIdOut,
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        model,
+        choices: [{ index: 0, message, finish_reason: nsFinish || finish || 'stop' }],
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+      };
+      try { res.end(JSON.stringify(payload)); } catch {}
+      return;
+    }
     try { res.end(); } catch {}
   } catch (err) {
     if (res.destroyed || res.writableEnded) return;
     const msg = err && err.message ? err.message : String(err);
+    if (!wantStream) {
+      try {
+        res.statusCode = 502;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: { message: msg, type: 'upstream_error' } }));
+      } catch {}
+      return;
+    }
     safeWrite(`data: ${mk({ content: '\n\n[Error: ' + msg + ']' })}\n\n`);
     safeWrite(`data: ${mk({}, 'stop')}\n\n`);
     safeWrite('data: [DONE]\n\n');
