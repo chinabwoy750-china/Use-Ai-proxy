@@ -118,21 +118,21 @@ function buildToolInstructions(tools) {
   const names = (tools || [])
     .map((t) => (t && t.function && t.function.name) || (t && t.name) || '')
     .filter(Boolean);
-  const nameList = names.length ? names.join(', ') : 'available tools';
+  const nameList = names.length ? names.join(', ') : 'available functions';
   const schemas = toolSchemaBlurb(tools);
-  // Keep markers short; models (esp. Kimi) often partially echo long [SYSTEM] blocks.
+  // Avoid the word "Tools:" — Kimi often echoes that prefix into the reply.
   return (
-    `<tools_spec hidden="1">\n` +
-    `Tools: ${nameList}.\n` +
-    (schemas ? `Schemas:\n${schemas}\n` : '') +
-    `When a tool is required, reply with ONLY:\n` +
+    `<fn_spec>\n` +
+    `Functions: ${nameList}.\n` +
+    (schemas ? `${schemas}\n` : '') +
+    `If you need a function, output ONLY this XML (no other text):\n` +
     `<|DSML|tool_calls>\n` +
-    `  <|DSML|invoke name="TOOL_NAME">\n` +
+    `  <|DSML|invoke name="NAME">\n` +
     `    <|DSML|parameter name="ARG"><![CDATA[VALUE]]></|DSML|parameter>\n` +
     `  </|DSML|invoke>\n` +
     `</|DSML|tool_calls>\n` +
-    `Never invent disk/files/shell facts — call a tool. Plain text only when no tool is needed.\n` +
-    `</tools_spec>\n`
+    `Do not invent system facts; call a function. Otherwise answer in plain text.\n` +
+    `</fn_spec>\n`
   );
 }
 
@@ -141,40 +141,91 @@ function stripInstructionLeak(text) {
   if (!text) return '';
   let s = String(text);
 
-  // New tools_spec wrapper (full + partial)
+  // fn_spec / tools_spec wrappers (full + partial / unclosed)
+  s = s.replace(/<fn_spec\b[^>]*>[\s\S]*?<\/fn_spec>\s*/gi, '');
+  s = s.replace(/<fn_spec\b[^>]*>[\s\S]*$/gi, '');
+  s = s.replace(/<\/fn_spec>\s*/gi, '');
   s = s.replace(/<tools_spec\b[^>]*>[\s\S]*?<\/tools_spec>\s*/gi, '');
   s = s.replace(/<tools_spec\b[^>]*>[\s\S]*$/gi, '');
   s = s.replace(/<\/tools_spec>\s*/gi, '');
+  // partial open tags glued to reply
+  s = s.replace(/^\s*<tools_spec\b[^>]*>\s*/i, '');
+  s = s.replace(/^\s*<fn_spec\b[^>]*>\s*/i, '');
 
-  // Legacy [SYSTEM]…[END SYSTEM] full block
+  // "Tools: foo, bar." or "Tools:Hi there" (common Kimi echo)
+  s = s.replace(/^\s*Tools\s*:\s*[^\n]*\n?/i, '');
+  s = s.replace(/^\s*Tools\s*:\s*/i, '');
+  s = s.replace(/^\s*Functions\s*:\s*[^\n]*\n?/i, '');
+  s = s.replace(/^\s*Functions\s*:\s*/i, '');
+  s = s.replace(/^\s*Schemas\s*:\s*\n?/i, '');
+  s = s.replace(/^\s*-\s+[a-zA-Z0-9_.-]+:[^\n]*\n/gm, ''); // schema lines if leaked
+
+  // Legacy [SYSTEM]…[END SYSTEM]
   s = s.replace(/\[SYSTEM[\s\S]*?\[END SYSTEM\]\s*/gi, '');
-  // Partial Kimi leak: "[SYSTEM — DO NOT ECHO THIS BLO" glued to real text
   s = s.replace(/\[SYSTEM\s*[—\-–]*\s*DO NOT ECHO THIS BLO(?:CK)?/gi, '');
   s = s.replace(/\[SYSTEM[^\]\n]{0,100}\]/g, '');
   s = s.replace(/\[END SYSTEM\]\s*/gi, '');
   s = s.replace(/DO NOT ECHO THIS BLOCK\]?/gi, '');
   s = s.replace(/DO NOT ECHO THIS BLO(?:CK)?/gi, '');
 
-  // DSML instruction echo
   s = s.replace(/To call a tool, output ONLY this XML[\s\S]{0,400}?<\/\|DSML\|tool_calls>/gi, '');
+  s = s.replace(/If you need a function, output ONLY this XML[\s\S]{0,400}?<\/\|DSML\|tool_calls>/gi, '');
   s = s.replace(/You can call tools when needed:[^\n]*\n?/gi, '');
+  s = s.replace(/Never invent disk\/files\/shell facts[^\n]*\n?/gi, '');
+  s = s.replace(/Do not invent system facts[^\n]*\n?/gi, '');
   s = s.replace(/For device\/system questions[^\n]*\n?/gi, '');
   s = s.replace(/For normal chat with no tool needed[^\n]*\n?/gi, '');
+  s = s.replace(/When a tool is required[^\n]*\n?/gi, '');
 
-  s = s.replace(
-    /TOOL CALL FORMAT[\s\S]*?(?:no tool XML\.?\s*)/i,
-    ''
-  );
-  s = s.replace(
-    /^[\s\S]{0,40}?TOOL CALL FORMAT[^\n]*\n?/i,
-    ''
-  );
+  s = s.replace(/TOOL CALL FORMAT[\s\S]*?(?:no tool XML\.?\s*)/i, '');
+  s = s.replace(/^[\s\S]{0,40}?TOOL CALL FORMAT[^\n]*\n?/i, '');
   s = s.replace(/^\s*TOOL CALL FORMAT[^\n]*\n?/i, '');
   s = s.replace(/^\s*FOLLOW EXAC[A-Z]*\s*/i, '');
 
-  // If reply still starts mid-word after a strip (e.g. " there! I'm Kimi")
-  // leave as-is — client may have partial stream; only trim pure junk prefixes
+  // DSML example block echo without closing tag fully
+  s = s.replace(/<\|DSML\|tool_calls>[\s\S]*?<\/\|DSML\|tool_calls>/gi, (m) => {
+    // keep real tool calls — only strip if it looks like the template
+    if (/TOOL_NAME|NAME>|ARG>/.test(m)) return '';
+    return m;
+  });
+
   return s;
+}
+
+/**
+ * Stateful stripper for streaming: hold leading junk until real content appears.
+ */
+class LeakStripStream {
+  constructor() {
+    this.buf = '';
+    this.done = false;
+  }
+  push(chunk) {
+    if (!chunk) return '';
+    if (this.done) return stripInstructionLeak(chunk);
+    this.buf += chunk;
+    const cleaned = stripInstructionLeak(this.buf);
+    // Still only whitespace / empty after strip → keep buffering (limit)
+    if (!cleaned.trim()) {
+      if (this.buf.length > 4000) {
+        this.done = true;
+        this.buf = '';
+        return cleaned;
+      }
+      return '';
+    }
+    // Emit cleaned so far; further chunks pass through with light strip
+    this.done = true;
+    this.buf = '';
+    return cleaned;
+  }
+  flush() {
+    if (this.done || !this.buf) return '';
+    const cleaned = stripInstructionLeak(this.buf);
+    this.buf = '';
+    this.done = true;
+    return cleaned;
+  }
 }
 
 /**
@@ -248,4 +299,5 @@ module.exports = {
   StreamToolSieve,
   normalizeDsmlShell,
   stripInstructionLeak,
+  LeakStripStream,
 };

@@ -9,7 +9,7 @@
  *   KIMI_REFRESH_TOKENS — comma-separated refresh tokens (pool / rotation)
  */
 const crypto = require('crypto');
-const { buildToolInstructions, StreamToolSieve, stripInstructionLeak } = require('./tool-sieve');
+const { buildToolInstructions, StreamToolSieve, stripInstructionLeak, LeakStripStream } = require('./tool-sieve');
 
 const KIMI_BASE = (process.env.KIMI_URL || 'https://www.kimi.ai').replace(/\/$/, '');
 const AUTH_BASE = (process.env.KIMI_AUTH_URL || 'https://auth.kimi.ai').replace(/\/$/, '');
@@ -229,6 +229,11 @@ module.exports = async function kimiProxy(opts, res) {
     // Client-owned tools: don't force Kimi built-in search
     const streamUrlTpl = (id) => `${KIMI_BASE}/api/chat/${id}/completion/stream`;
     const mo = modelOptions(model);
+    const wantThinking =
+      !!mo.thinking ||
+      /k1|think|reason/i.test(String(model || '')) ||
+      opts.reasoning === true ||
+      opts.thinking === true;
     const body = {
       messages: [{ role: 'user', content: prompt }],
       references: [],
@@ -238,6 +243,8 @@ module.exports = async function kimiProxy(opts, res) {
       use_search: hasTools ? false : (opts.use_search != null ? !!opts.use_search : !!mo.use_search),
       use_deep_research: hasTools ? false : (opts.use_deep_research != null ? !!opts.use_deep_research : !!mo.use_deep_research),
       use_semantic_memory: false,
+      // web surface flags (ignored if unsupported)
+      ...(wantThinking ? { thinking: true, enable_thinking: true } : {}),
     };
 
     let lastErr = null;
@@ -296,6 +303,23 @@ module.exports = async function kimiProxy(opts, res) {
     let buf = '';
     let sawAssistant = false;
     const sieve = hasTools ? new StreamToolSieve(true) : null;
+    const leak = new LeakStripStream();
+    const emitContent = (piece) => {
+      if (!piece) return;
+      const cleaned = leak.push(piece);
+      if (!cleaned) return;
+      if (sieve) {
+        const { flush } = sieve.push(cleaned);
+        if (flush) safeWrite(`data: ${mk({ content: flush })}\n\n`);
+      } else {
+        safeWrite(`data: ${mk({ content: cleaned })}\n\n`);
+      }
+    };
+    const emitReasoning = (piece) => {
+      if (!piece || typeof piece !== 'string') return;
+      const cleaned = stripInstructionLeak(piece);
+      if (cleaned) safeWrite(`data: ${mk({ reasoning_content: cleaned })}\n\n`);
+    };
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -309,19 +333,50 @@ module.exports = async function kimiProxy(opts, res) {
         if (!raw || raw === '[DONE]') continue;
         try {
           const evt = JSON.parse(raw);
-          let text = evt.text || evt.content || evt.choices?.[0]?.delta?.content || '';
-          if (typeof text !== 'string' || !text) continue;
-          if (!sawAssistant && text.trim() === prompt.trim()) continue;
-          sawAssistant = true;
-          if (sieve) {
-            const { flush } = sieve.push(text);
-            const cleaned = stripInstructionLeak(flush);
-            if (cleaned) safeWrite(`data: ${mk({ content: cleaned })}\n\n`);
-          } else {
-            const cleaned = stripInstructionLeak(text);
-            if (cleaned) safeWrite(`data: ${mk({ content: cleaned })}\n\n`);
+          const delta = evt.choices?.[0]?.delta || {};
+          // Reasoning / thinking fragments (official API + web variants)
+          const reason =
+            delta.reasoning_content ||
+            evt.reasoning_content ||
+            evt.reasoning ||
+            evt.thinking ||
+            (evt.type === 'thinking' || evt.event === 'thinking' || evt.view === 'thinking'
+              ? (evt.text || evt.content || '')
+              : '') ||
+            '';
+          if (reason && typeof reason === 'string') {
+            sawAssistant = true;
+            emitReasoning(reason);
           }
+          let text =
+            delta.content ||
+            evt.text ||
+            evt.content ||
+            '';
+          // Some web events nest content under message
+          if (!text && evt.message && typeof evt.message.content === 'string') {
+            text = evt.message.content;
+          }
+          if (typeof text !== 'string' || !text) continue;
+          // Skip pure role / empty assistant openers
+          if (!sawAssistant && text.trim() === prompt.trim()) continue;
+          // Skip if this chunk was already handled as reasoning-only
+          if (reason && text === reason) continue;
+          sawAssistant = true;
+          emitContent(text);
         } catch {}
+      }
+    }
+    // flush held leak buffer
+    {
+      const tail = leak.flush();
+      if (tail) {
+        if (sieve) {
+          const { flush } = sieve.push(tail);
+          if (flush) safeWrite(`data: ${mk({ content: flush })}\n\n`);
+        } else {
+          safeWrite(`data: ${mk({ content: tail })}\n\n`);
+        }
       }
     }
 
