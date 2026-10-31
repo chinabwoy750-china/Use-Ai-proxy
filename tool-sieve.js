@@ -117,22 +117,15 @@ function toolSchemaBlurb(tools) {
 function buildToolInstructions(tools) {
   const names = (tools || [])
     .map((t) => (t && t.function && t.function.name) || (t && t.name) || '')
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, 24); // keep prompt short — long tool dumps make Kimi web return empty
   const nameList = names.length ? names.join(', ') : 'available functions';
-  const schemas = toolSchemaBlurb(tools);
-  // Avoid the word "Tools:" — Kimi often echoes that prefix into the reply.
+  // Minimal prompt: long schema blocks cause empty streams on Kimi web.
   return (
-    `<fn_spec>\n` +
-    `Functions: ${nameList}.\n` +
-    (schemas ? `${schemas}\n` : '') +
-    `If you need a function, output ONLY this XML (no other text):\n` +
-    `<|DSML|tool_calls>\n` +
-    `  <|DSML|invoke name="NAME">\n` +
-    `    <|DSML|parameter name="ARG"><![CDATA[VALUE]]></|DSML|parameter>\n` +
-    `  </|DSML|invoke>\n` +
-    `</|DSML|tool_calls>\n` +
-    `Do not invent system facts; call a function. Otherwise answer in plain text.\n` +
-    `</fn_spec>\n`
+    `(You may call: ${nameList}. ` +
+    `To call one, output <|DSML|tool_calls><|DSML|invoke name="NAME">` +
+    `<|DSML|parameter name="ARG"><![CDATA[VALUE]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>. ` +
+    `Otherwise reply in plain text only.)\n\n`
   );
 }
 
@@ -157,6 +150,9 @@ function stripInstructionLeak(text) {
   s = s.replace(/^\s*Tools\s*:\s*/i, '');
   s = s.replace(/^\s*Functions\s*:\s*[^\n]*\n?/i, '');
   s = s.replace(/^\s*Functions\s*:\s*/i, '');
+  // Short Kimi injection echo
+  s = s.replace(/^\s*\(You may call:[^)]*\)\s*/i, '');
+  s = s.replace(/\(You may call:[^)]*\)\s*/gi, '');
   s = s.replace(/^\s*Schemas\s*:\s*\n?/i, '');
   s = s.replace(/^\s*-\s+[a-zA-Z0-9_.-]+:[^\n]*\n/gm, ''); // schema lines if leaked
 

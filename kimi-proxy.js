@@ -253,8 +253,10 @@ module.exports = async function kimiProxy(opts, res) {
 
     let prompt = lastUser(opts.messages);
     const hasTools = Array.isArray(opts.tools) && opts.tools.length > 0;
-    if (hasTools) {
-      prompt = buildToolInstructions(opts.tools) + '\n\n' + prompt;
+    // Hermes/China-GPT attach large tools[]; long injections make Kimi web return empty.
+    // Inject a short hint only for small tool lists; large lists rely on plain reply + retry.
+    if (hasTools && opts.tools.length <= 12) {
+      prompt = buildToolInstructions(opts.tools) + prompt;
     }
     // Client-owned tools: don't force Kimi built-in search
     const streamUrlTpl = (id) => `${KIMI_BASE}/api/chat/${id}/completion/stream`;
@@ -334,21 +336,29 @@ module.exports = async function kimiProxy(opts, res) {
     let sawAssistant = false;
     const sieve = hasTools ? new StreamToolSieve(true) : null;
     const leak = new LeakStripStream();
+    let emittedChars = 0;
     const emitContent = (piece) => {
       if (!piece) return;
       const cleaned = leak.push(piece);
       if (!cleaned) return;
       if (sieve) {
         const { flush } = sieve.push(cleaned);
-        if (flush) safeWrite(`data: ${mk({ content: flush })}\n\n`);
+        if (flush) {
+          emittedChars += flush.length;
+          safeWrite(`data: ${mk({ content: flush })}\n\n`);
+        }
       } else {
+        emittedChars += cleaned.length;
         safeWrite(`data: ${mk({ content: cleaned })}\n\n`);
       }
     };
     const emitReasoning = (piece) => {
       if (!piece || typeof piece !== 'string') return;
       const cleaned = stripInstructionLeak(piece);
-      if (cleaned) safeWrite(`data: ${mk({ reasoning_content: cleaned })}\n\n`);
+      if (cleaned) {
+        emittedChars += cleaned.length;
+        safeWrite(`data: ${mk({ reasoning_content: cleaned })}\n\n`);
+      }
     };
     while (true) {
       const { done, value } = await reader.read();
@@ -424,7 +434,10 @@ module.exports = async function kimiProxy(opts, res) {
       const fin = sieve.finalize();
       if (fin.tool_calls && fin.tool_calls.length) {
         const pre = stripInstructionLeak(fin.content || '');
-        if (pre) safeWrite(`data: ${mk({ content: pre })}\n\n`);
+        if (pre) {
+          emittedChars += pre.length;
+          safeWrite(`data: ${mk({ content: pre })}\n\n`);
+        }
         for (let i = 0; i < fin.tool_calls.length; i++) {
           const tc = fin.tool_calls[i];
           safeWrite(`data: ${mk({
@@ -437,11 +450,75 @@ module.exports = async function kimiProxy(opts, res) {
           })}\n\n`);
         }
         finish = 'tool_calls';
+        emittedChars += 1;
       } else if (fin.leftover) {
         const cleaned = stripInstructionLeak(fin.leftover);
-        if (cleaned) safeWrite(`data: ${mk({ content: cleaned })}\n\n`);
+        if (cleaned) {
+          emittedChars += cleaned.length;
+          safeWrite(`data: ${mk({ content: cleaned })}\n\n`);
+        }
       }
     }
+
+    // China-GPT/Hermes always send tools[]. Kimi web often returns empty
+    // when a tool system prompt is injected — retry once as plain chat.
+    if (emittedChars === 0 && hasTools && token && wantStream) {
+      console.log('[kimi] empty stream with tools — retrying plain chat');
+      try {
+        chatId = await createChat(token);
+        const plainBody = {
+          messages: [{ role: 'user', content: lastUser(opts.messages) }],
+          references: [],
+          refs: [],
+          history: [],
+          kimiplus_id: mo.kimiplus_id || 'kimi',
+          use_search: false,
+          use_deep_research: false,
+          use_semantic_memory: false,
+          ...(wantThinking ? { thinking: true, enable_thinking: true } : {}),
+        };
+        streamRes = await fetch(streamUrlTpl(chatId), {
+          method: 'POST',
+          headers: { ...apiHeaders(token), Accept: 'text/event-stream' },
+          body: JSON.stringify(plainBody),
+        });
+        if (streamRes.ok) {
+          const reader2 = streamRes.body.getReader();
+          const dec2 = new TextDecoder();
+          let buf2 = '';
+          while (true) {
+            const { done, value } = await reader2.read();
+            if (done) break;
+            buf2 += dec2.decode(value, { stream: true });
+            const lines = buf2.split('\n');
+            buf2 = lines.pop();
+            for (const line of lines) {
+              const t = line.trim();
+              if (!t.startsWith('data:')) continue;
+              const raw = t.slice(5).trim();
+              if (!raw || raw === '[DONE]') continue;
+              try {
+                const evt = JSON.parse(raw);
+                const delta = evt.choices?.[0]?.delta || {};
+                const reason = delta.reasoning_content || evt.reasoning_content || evt.reasoning || evt.thinking || '';
+                if (reason) {
+                  emittedChars += reason.length;
+                  safeWrite(`data: ${mk({ reasoning_content: reason })}\n\n`);
+                }
+                let text = delta.content || evt.text || evt.content || '';
+                if (typeof text === 'string' && text) {
+                  emittedChars += text.length;
+                  safeWrite(`data: ${mk({ content: text })}\n\n`);
+                }
+              } catch {}
+            }
+          }
+        }
+      } catch (retryErr) {
+        console.log('[kimi] plain retry failed', retryErr && retryErr.message);
+      }
+    }
+
     safeWrite(`data: ${mk({}, finish)}\n\n`);
     safeWrite('data: [DONE]\n\n');
     if (!wantStream) {
