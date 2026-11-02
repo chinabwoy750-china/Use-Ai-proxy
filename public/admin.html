@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#000000"/>
+<title>Use-AI Proxy — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#000; --panel:#0a0a0a; --panel-2:#101010; --panel-3:#161616; --raised:#1b1b1b;
+  --line:#232323; --line-strong:#303030; --text:#ededed; --muted:#9a9a9a; --dim:#6b6b6b;
+  --accent:#3d7dff; --accent-soft:rgba(61,125,255,.14); --danger:#f26161; --ok:#56d364; --warn:#e3b341;
+  --r:10px; --font:"DM Sans",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font:400 14px/1.5 var(--font)}
+a{color:var(--accent);text-decoration:none}
+.wrap{max-width:1100px;margin:0 auto;padding:24px 16px 64px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:28px;flex-wrap:wrap}
+header h1{margin:0;font-size:20px;font-weight:600;letter-spacing:-.02em}
+header .sub{color:var(--muted);font-size:13px}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--panel-3);border:1px solid var(--line);font-size:12px;color:var(--muted)}
+.dot{width:7px;height:7px;border-radius:50%}
+.dot.on{background:var(--ok);box-shadow:0 0 0 3px rgba(86,211,100,.15)}
+.dot.off{background:var(--dim)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px;transition:border-color .15s}
+.card:hover{border-color:var(--line-strong)}
+.card-top{display:flex;align-items:center;gap:12px}
+.icon{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff;flex-shrink:0}
+.card h2{margin:0;font-size:15px;font-weight:600}
+.card .meta{font-size:12px;color:var(--muted)}
+.fields{display:flex;flex-direction:column;gap:8px}
+label{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}
+input,textarea{width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;color:var(--text);padding:10px 12px;font:400 13px/1.4 var(--mono);outline:none}
+input:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+textarea{min-height:72px;resize:vertical}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+button,.btn{appearance:none;border:0;border-radius:8px;padding:9px 14px;font:500 13px var(--font);cursor:pointer;background:var(--accent);color:#fff}
+button.secondary{background:var(--raised);color:var(--text);border:1px solid var(--line)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--panel-3);border:1px solid var(--line);padding:12px 16px;border-radius:10px;font-size:13px;display:none;z-index:50;max-width:320px}
+.toast.show{display:block}
+.login{max-width:380px;margin:12vh auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:28px}
+.login h1{margin:0 0 8px;font-size:18px}
+.login p{margin:0 0 18px;color:var(--muted);font-size:13px}
+.hint{font-size:12px;color:var(--dim);margin-top:4px}
+.preview{font-size:11px;color:var(--muted);font-family:var(--mono);word-break:break-all}
+.status-pill{font-size:11px;padding:2px 8px;border-radius:6px;font-weight:500}
+.status-pill.ok{background:rgba(86,211,100,.12);color:var(--ok)}
+.status-pill.no{background:rgba(242,97,97,.12);color:var(--danger)}
+footer{margin-top:32px;color:var(--dim);font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+<div id="app" class="wrap"></div>
+<div id="toast" class="toast"></div>
+<script>
+const PROVIDERS = [
+  { id:'deepseek', name:'DeepSeek Web', color:'#4D6BFE', text:'DS',
+    fields:[
+      {key:'DEEPSEEK_TOKEN', label:'Token (userToken)', secret:true},
+      {key:'DEEPSEEK_COOKIE', label:'Cookie', secret:true, area:true},
+      {key:'DEEPSEEK_URL', label:'Base URL', placeholder:'https://chat.deepseek.com'},
+    ],
+    site:'https://chat.deepseek.com',
+    models:'deepseek-chat, deepseek-reasoner, …'
+  },
+  { id:'kimi', name:'Kimi / Moonshot', color:'#1a1a1a', text:'K',
+    fields:[
+      {key:'KIMI_TOKEN', label:'Access token', secret:true},
+      {key:'KIMI_REFRESH_TOKEN', label:'Refresh token', secret:true},
+      {key:'KIMI_URL', label:'Base URL', placeholder:'https://www.kimi.ai'},
+    ],
+    site:'https://www.kimi.ai',
+    models:'kimi, kimi-k2, …'
+  },
+  { id:'perplexity', name:'Perplexity Web', color:'#20808D', text:'P',
+    fields:[
+      {key:'PERPLEXITY_COOKIE', label:'Session cookie / full Cookie', secret:true, area:true},
+    ],
+    site:'https://www.perplexity.ai',
+    models:'perplexity, pplx-gpt, pplx-sonnet, …'
+  },
+  { id:'grok', name:'Grok Web', color:'#0a0a0a', text:'G',
+    fields:[
+      {key:'GROK_COOKIE', label:'Full grok.com Cookie (sso + cf_clearance)', secret:true, area:true},
+    ],
+    site:'https://grok.com',
+    models:'grok, grok-4, grok-4-thinking'
+  },
+  { id:'uc', name:'UC Web (image)', color:'#8B5CF6', text:'UC',
+    fields:[
+      {key:'UC_COOKIE', label:'Full Cookie (must include __client)', secret:true, area:true},
+    ],
+    site:'https://uncensored.com',
+    models:'uc, uc-seedream, uc-nano'
+  },
+  { id:'mistral', name:'Mistral / Codestral', color:'#F7D046', text:'M',
+    fields:[
+      {key:'MISTRAL_API_KEY', label:'API key(s)', secret:true},
+      {key:'MISTRAL_COOKIE', label:'Optional web cookie', secret:true, area:true},
+    ],
+    site:'https://console.mistral.ai',
+    models:'codestral, mistral-small, …'
+  },
+  { id:'huggingface', name:'Hugging Face', color:'#FFD21E', text:'HF',
+    fields:[
+      {key:'HF_CHAT_COOKIE', label:'hf-chat cookie', secret:true},
+    ],
+    site:'https://huggingface.co/chat',
+    models:'hf / omni / org/model'
+  },
+  { id:'opencode', name:'OpenCode Free', color:'#E87040', text:'OC',
+    fields:[
+      {key:'OPENCODE_ENABLED', label:'Enabled (1 or 0)', placeholder:'1'},
+    ],
+    site:'https://opencode.ai',
+    models:'opencode, opencode-muse'
+  },
+  { id:'veo', name:'Veo Free (media)', color:'#EA4335', text:'V',
+    fields:[
+      {key:'VEO_ENABLED', label:'Enabled (1 or 0)', placeholder:'1'},
+    ],
+    site:'https://veoaifree.com',
+    models:'veo, veo-image'
+  },
+];
+
+let token = sessionStorage.getItem('admin_token') || '';
+let statusMap = {};
+
+function toast(msg, ok){
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.borderColor = ok === false ? 'var(--danger)' : 'var(--line)';
+  el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'), 3200);
+}
+
+async function api(path, opts={}){
+  const headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const r = await fetch(path, {...opts, headers});
+  const j = await r.json().catch(()=>({}));
+  if (r.status === 401) {
+    token = '';
+    sessionStorage.removeItem('admin_token');
+    render();
+    throw new Error(j.error || 'unauthorized');
+  }
+  if (!r.ok) throw new Error(j.error || j.reason || ('HTTP '+r.status));
+  return j;
+}
+
+function renderLogin(){
+  document.getElementById('app').innerHTML = `
+    <div class="login">
+      <h1>Admin login</h1>
+      <p>Enter the same value as <code>ADMIN_PASSWORD</code> on the server.</p>
+      <div class="fields">
+        <label>Password</label>
+        <input id="pw" type="password" autocomplete="current-password" placeholder="ADMIN_PASSWORD"/>
+        <button id="go">Unlock dashboard</button>
+        <p class="hint">Set ADMIN_PASSWORD in Render env / config, then redeploy if needed.</p>
+      </div>
+    </div>`;
+  document.getElementById('go').onclick = async () => {
+    token = document.getElementById('pw').value.trim();
+    try {
+      await api('/api/admin/status');
+      sessionStorage.setItem('admin_token', token);
+      toast('Unlocked', true);
+      render();
+    } catch(e) {
+      token = '';
+      toast(e.message || 'Login failed', false);
+    }
+  };
+}
+
+function fieldHtml(f, st){
+  const prev = st && st[f.key] ? st[f.key] : {configured:false, preview:''};
+  const ph = f.placeholder || (prev.configured ? prev.preview : '');
+  if (f.area) {
+    return `<div><label>${f.label}</label>
+      <textarea data-key="${f.key}" placeholder="${escapeAttr(ph)}"></textarea>
+      <div class="preview">${prev.configured ? 'Saved: '+escapeHtml(prev.preview)+' · source '+prev.source : 'Not set'}</div></div>`;
+  }
+  return `<div><label>${f.label}</label>
+    <input data-key="${f.key}" type="${f.secret?'password':'text'}" placeholder="${escapeAttr(ph)}" autocomplete="off"/>
+    <div class="preview">${prev.configured ? 'Saved: '+escapeHtml(prev.preview)+' · source '+prev.source : 'Not set'}</div></div>`;
+}
+
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));}
+function escapeAttr(s){return escapeHtml(s).replace(/\n/g,' ');}
+
+async function renderDash(){
+  let health = {};
+  try {
+    statusMap = await api('/api/admin/status');
+    health = await fetch('/health').then(r=>r.json()).catch(()=>({}));
+  } catch(e) {
+    renderLogin();
+    return;
+  }
+  const cards = PROVIDERS.map(p => {
+    const on = !!(health[p.id] || (p.id==='opencode' && health.opencode !== false));
+    const fields = p.fields.map(f => fieldHtml(f, statusMap)).join('');
+    return `<article class="card" data-id="${p.id}">
+      <div class="card-top">
+        <div class="icon" style="background:${p.color}">${p.text}</div>
+        <div style="flex:1">
+          <h2>${p.name}</h2>
+          <div class="meta"><a href="${p.site}" target="_blank" rel="noopener">${p.site.replace(/^https?:\/\//,'')}</a></div>
+        </div>
+        <span class="status-pill ${on?'ok':'no'}">${on?'configured':'missing'}</span>
+      </div>
+      <div class="meta">Models: ${escapeHtml(p.models)}</div>
+      <div class="fields">${fields}</div>
+      <div class="row">
+        <button data-save="${p.id}">Save</button>
+        <button class="secondary" data-test="${p.id}">Test /health</button>
+      </div>
+    </article>`;
+  }).join('');
+
+  document.getElementById('app').innerHTML = `
+    <header>
+      <div>
+        <h1>Use-AI Proxy Admin</h1>
+        <div class="sub">Configure provider secrets · OpenAI base <code>/v1</code></div>
+      </div>
+      <div class="row">
+        <span class="badge"><span class="dot ${health.ok?'on':'off'}"></span> API ${health.ok?'up':'down'}</span>
+        <button class="secondary" id="logout">Logout</button>
+      </div>
+    </header>
+    <div class="grid">${cards}</div>
+    <footer>
+      Live values apply immediately. On Render free tier, also set the same env vars for persistence across restarts.
+      · <a href="/v1/models">/v1/models</a> · <a href="/health">/health</a>
+    </footer>`;
+
+  document.getElementById('logout').onclick = () => {
+    token = '';
+    sessionStorage.removeItem('admin_token');
+    render();
+  };
+
+  document.querySelectorAll('[data-save]').forEach(btn => {
+    btn.onclick = async () => {
+      const card = btn.closest('.card');
+      const body = {};
+      card.querySelectorAll('[data-key]').forEach(el => {
+        const v = el.value.trim();
+        if (v) body[el.getAttribute('data-key')] = v;
+      });
+      if (!Object.keys(body).length) { toast('Nothing to save', false); return; }
+      btn.disabled = true;
+      try {
+        statusMap = await api('/api/admin/config', { method:'POST', body: JSON.stringify(body) });
+        toast('Saved · applied live', true);
+        renderDash();
+      } catch(e) { toast(e.message, false); }
+      btn.disabled = false;
+    };
+  });
+  document.querySelectorAll('[data-test]').forEach(btn => {
+    btn.onclick = async () => {
+      const h = await fetch('/health').then(r=>r.json()).catch(e=>({error:e.message}));
+      toast(JSON.stringify(h).slice(0,180), !!h.ok);
+    };
+  });
+}
+
+function render(){
+  if (!token) renderLogin();
+  else renderDash();
+}
+render();
+</script>
+</body>
+</html>

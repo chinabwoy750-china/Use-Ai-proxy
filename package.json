@@ -1,7 +1,7 @@
 {
   "name": "useai-proxy",
-  "version": "2.0.0",
-  "description": "OpenAI-compatible DeepSeek web proxy (PoW)",
+  "version": "3.0.0",
+  "description": "OpenAI-compatible multi-provider web proxy + admin dashboard",
   "main": "server.js",
   "engines": { "node": ">=18" },
   "scripts": { "start": "node server.js" },

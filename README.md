@@ -1,98 +1,46 @@
-# Use-Ai-proxy
+# Use-AI Proxy
 
-OpenAI-compatible multi-upstream proxy:
+OpenAI-compatible multi-provider reverse proxy with admin dashboard.
 
-- **DeepSeek** — `chat.deepseek.com` (cookie + token + PoW)
-- **Kimi** — `www.kimi.ai` (access / refresh token)
-- **HuggingFace Chat** — `huggingface.co/chat` (`hf-chat` cookie)
-- **Mistral Le Chat** — `chat.mistral.ai` (cookie) or official `MISTRAL_API_KEY`
+## Providers
+
+| Model prefix | Provider | Credential env |
+|--------------|----------|----------------|
+| `deepseek-*` (default) | DeepSeek Web | `DEEPSEEK_TOKEN`, `DEEPSEEK_COOKIE` |
+| `kimi*` | Kimi | `KIMI_TOKEN`, `KIMI_REFRESH_TOKEN` |
+| `perplexity`, `pplx-*` | Perplexity Web | `PERPLEXITY_COOKIE` |
+| `grok*` | Grok Web | `GROK_COOKIE` |
+| `opencode*` | OpenCode Free | `OPENCODE_ENABLED=1` (no key) |
+| `uc*` | UC Web (image) | `UC_COOKIE` (must include `__client`) |
+| `veo*` | Veo Free | `VEO_ENABLED=1` |
+| `codestral*`, `mistral*` | Mistral | `MISTRAL_API_KEY` |
+| `hf*`, `omni` | Hugging Face | `HF_CHAT_COOKIE` |
 
 ## Endpoints
 
 - `GET /health`
 - `GET /v1/models`
-- `POST /v1/chat/completions` (SSE)
+- `POST /v1/chat/completions`
+- `POST /v1/images/generations` (UC)
+- `GET /admin` — dashboard (requires `ADMIN_PASSWORD`)
 
-## Env
+## Admin
 
-### DeepSeek
-- `DEEPSEEK_URL` (default `https://chat.deepseek.com`)
-- `DEEPSEEK_TOKEN`
-- `DEEPSEEK_COOKIE`
+Set `ADMIN_PASSWORD` on the host, open `/admin`, log in, paste cookies/tokens per provider.
 
-### Kimi
-- `KIMI_URL` (default `https://www.kimi.ai`)
-- `KIMI_TOKEN` and/or `KIMI_REFRESH_TOKEN`
-
-### HuggingFace Chat
-- `HF_CHAT_COOKIE` — value of the `hf-chat` cookie from a logged-in browser (or full `Cookie` header containing `hf-chat=...`)
-- `HF_CHAT_MODEL` — optional default model id (default `omni`)
-
-## Models (examples)
-
-| model | upstream |
-|-------|----------|
-| `deepseek` / `deepseek-chat` | DeepSeek |
-| `kimi` / `kimi-search` | Kimi |
-| `huggingface` / `hf` / `omni` | HF Chat |
-| `hf-qwen` / `hf-deepseek` / `hf-glm` | HF Chat shortcuts |
+On **Render free**, disk is ephemeral — also set the same values as **Environment** variables so they survive restarts. Admin “Save” applies **live** to the running process.
 
 ## Run
 
 ```bash
+export ADMIN_PASSWORD='change-me'
+export DEEPSEEK_TOKEN='...'
+# ...
 npm start
 ```
 
-## Cookie helper (HF)
+## Notes
 
-On https://huggingface.co/chat (logged in), DevTools Console:
-
-```js
-copy(document.cookie.split(';').map(s=>s.trim()).find(s=>s.startsWith('hf-chat='))?.split('=').slice(1).join('=')||'')
-```
-
-Then set `HF_CHAT_COOKIE` to that value.
-
-
-### Mistral
-- `MISTRAL_COOKIE` or `MISTRAL_COOKIE_HEADER` — `mistral-chat-session` from chat.mistral.ai (web)
-- `MISTRAL_API_KEY` — optional official API (preferred on Render; avoids Cloudflare)
-- Models: `mistral`, `mistral-large`, `mistral-small`, `codestral`
-
-Cookie helper (on https://chat.mistral.ai, logged in):
-
-```js
-(function () {
-  const raw = document.cookie.split(';').map(s => s.trim()).find(s => s.startsWith('mistral-chat-session='));
-  const val = raw ? raw.slice('mistral-chat-session='.length) : document.cookie;
-  console.log(val);
-  try { copy(val); } catch (_) {}
-})();
-```
-
-
-## Multi-credential pools (rotation)
-
-Use comma-separated lists. On HTTP **429**, that credential cools for ~60s and the next is tried.
-
-| Env | Meaning |
-|-----|---------|
-| `KIMI_REFRESH_TOKENS` | `rt1,rt2,rt3` refresh tokens |
-| `HF_COOKIES` | `cookie1,cookie2` hf-chat values |
-| `MISTRAL_API_KEYS` | `key1,key2` official API keys |
-| `MISTRAL_COOKIES` | web session cookies |
-
-Single-credential env vars still work.
-
-
-### Cookie / key separators
-
-- **HF / Mistral cookies:** separate accounts with `|||` (cookies often contain commas).
-- **Mistral API keys / Kimi refresh tokens:** comma-separated lists are fine.
-- **DeepSeek:** keep `token|cookie` lines or `TOKEN,TOKEN` + `COOKIE|||COOKIE` — no email/password auto-login (unreliable on Render).
-
-
-### Mistral free tier
-- Use model **`codestral`** / **`codestral-latest`** (works on free API keys).
-- **`mistral`**, **`mistral-large`**, **`mistral-small`** usually require a **paid** plan.
-- Override default with `MISTRAL_DEFAULT_MODEL` if needed.
+- **Grok**: Cloudflare may block datacenter IPs; paste full Cookie including `cf_clearance`.
+- **OpenCode Free**: may return 403 without browser TLS fingerprint.
+- **UC**: `__client` is HttpOnly — copy from DevTools Application → Cookies, not `document.cookie`.
