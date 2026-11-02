@@ -45,6 +45,17 @@ const museProxy = load('./providers/muse-proxy');
 const tinycmsProxy = load('./providers/tinycms-proxy');
 const maxaiProxy = load('./providers/maxai-proxy');
 
+const pollinationsProxy = load('./providers/pollinations-proxy');
+const doubaoProxy = load('./providers/doubao-proxy');
+const zaiProxy = load('./providers/zai-proxy');
+const yuanbaoProxy = load('./providers/yuanbao-proxy');
+const aistudioProxy = load('./providers/aistudio-proxy');
+const v0Proxy = load('./providers/v0-proxy');
+const notionProxy = load('./providers/notion-proxy');
+const cloudflareProxy = load('./providers/cloudflare-proxy');
+const longcatProxy = load('./providers/longcat-proxy');
+
+
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, 'public');
@@ -71,6 +82,17 @@ function routeProxy(model) {
   if ((m.startsWith('muse') || m.startsWith('meta-ai') || m === 'meta') && museProxy) return museProxy;
   if ((m.startsWith('tinycms') || m.startsWith('freegpt')) && tinycmsProxy) return tinycmsProxy;
   if ((m.startsWith('maxai') || m.startsWith('max-ai')) && maxaiProxy) return maxaiProxy;
+
+  if ((m.startsWith('pollinations')) && pollinationsProxy) return pollinationsProxy;
+  if ((m.startsWith('doubao') || m.startsWith('dola')) && doubaoProxy) return doubaoProxy;
+  if ((m.startsWith('zai') || m.startsWith('z-ai') || m === 'glm-z') && zaiProxy) return zaiProxy;
+  if ((m.startsWith('yuanbao')) && yuanbaoProxy) return yuanbaoProxy;
+  if ((m.startsWith('aistudio') || m.startsWith('hunyuan') || m.startsWith('tencent-aistudio')) && aistudioProxy) return aistudioProxy;
+  if ((m.startsWith('v0') || m.startsWith('vercel-v0')) && v0Proxy) return v0Proxy;
+  if ((m.startsWith('notion')) && notionProxy) return notionProxy;
+  if ((m.startsWith('cloudflare') || m.startsWith('cf-ai') || m.startsWith('workers-ai')) && cloudflareProxy) return cloudflareProxy;
+  if ((m.startsWith('longcat')) && longcatProxy) return longcatProxy;
+
 
   if (
     huggingfaceProxy &&
@@ -138,6 +160,15 @@ function collectModels() {
   add(museProxy, 'muse');
   add(tinycmsProxy, 'tinycms');
   add(maxaiProxy, 'maxai');
+  add(pollinationsProxy, 'pollinations');
+  add(doubaoProxy, 'doubao');
+  add(zaiProxy, 'zai');
+  add(yuanbaoProxy, 'yuanbao');
+  add(aistudioProxy, 'aistudio');
+  add(v0Proxy, 'v0');
+  add(notionProxy, 'notion');
+  add(cloudflareProxy, 'cloudflare');
+  add(longcatProxy, 'longcat');
   return models;
 }
 
@@ -233,6 +264,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(
-    `proxy on ${PORT} · admin /admin · providers: deepseek kimi mistral hf perplexity grok opencode uc veo + tier1 web`
+    `proxy on ${PORT} · admin /admin · providers: deepseek kimi mistral hf perplexity grok opencode uc veo + tier1 + tier5`
   );
 });

@@ -45,6 +45,24 @@ const KEYS = [
   'META_AI_COOKIE',
   'TINYCMS_COOKIE',
   'MAXAI_COOKIE',
+  'POLLINATIONS_KEY',
+  'POLLINATIONS_API_KEY',
+  'DOUBAO_COOKIE',
+  'DOLA_COOKIE',
+  'ZAI_COOKIE',
+  'ZAI_TOKEN',
+  'YUANBAO_COOKIE',
+  'AISTUDIO_COOKIE',
+  'TENCENT_AISTUDIO_COOKIE',
+  'V0_COOKIE',
+  'NOTION_COOKIE',
+  'NOTION_TOKEN_V2',
+  'CF_API_TOKEN',
+  'CLOUDFLARE_API_TOKEN',
+  'CF_ACCOUNT_ID',
+  'CLOUDFLARE_ACCOUNT_ID',
+  'LONGCAT_API_KEY',
+  'LONGCAT_KEY',
 ];
 
 const SENSITIVE = new Set(
@@ -150,6 +168,15 @@ function getPublicProviders() {
     muse: !!(process.env.MUSE_COOKIE || process.env.META_AI_COOKIE),
     tinycms: !!process.env.TINYCMS_COOKIE,
     maxai: !!process.env.MAXAI_COOKIE,
+    pollinations: true,
+    doubao: !!(process.env.DOUBAO_COOKIE || process.env.DOLA_COOKIE),
+    zai: !!(process.env.ZAI_COOKIE || process.env.ZAI_TOKEN),
+    yuanbao: !!process.env.YUANBAO_COOKIE,
+    aistudio: !!(process.env.AISTUDIO_COOKIE || process.env.TENCENT_AISTUDIO_COOKIE),
+    v0: !!process.env.V0_COOKIE,
+    notion: !!(process.env.NOTION_COOKIE || process.env.NOTION_TOKEN_V2),
+    cloudflare: !!(process.env.CF_API_TOKEN || process.env.CLOUDFLARE_API_TOKEN),
+    longcat: !!(process.env.LONGCAT_API_KEY || process.env.LONGCAT_KEY),
   };
 }
 
