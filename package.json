@@ -1,9 +1,13 @@
 {
   "name": "useai-proxy",
-  "version": "3.0.0",
-  "description": "OpenAI-compatible multi-provider web proxy + admin dashboard",
+  "version": "3.1.0",
+  "description": "OpenAI-compatible multi-provider web proxy + admin (tier1)",
   "main": "server.js",
-  "engines": { "node": ">=18" },
-  "scripts": { "start": "node server.js" },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {}
 }

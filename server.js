@@ -32,6 +32,20 @@ const opencodeProxy = load('./opencode-proxy');
 const ucProxy = load('./uc-proxy');
 const veoProxy = load('./veo-proxy');
 
+const notrackProxy = load('./providers/notrack-proxy');
+const t3Proxy = load('./providers/t3-proxy');
+const veniceProxy = load('./providers/venice-proxy');
+const poeProxy = load('./providers/poe-proxy');
+const arenaProxy = load('./providers/arena-proxy');
+const zenmuxProxy = load('./providers/zenmux-proxy');
+const blackboxProxy = load('./providers/blackbox-proxy');
+const innerProxy = load('./providers/inner-proxy');
+const adaptaProxy = load('./providers/adapta-proxy');
+const museProxy = load('./providers/muse-proxy');
+const tinycmsProxy = load('./providers/tinycms-proxy');
+const maxaiProxy = load('./providers/maxai-proxy');
+
+
 const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, 'public');
 
@@ -45,6 +59,18 @@ function routeProxy(model) {
   if (m.startsWith('opencode') && opencodeProxy) return opencodeProxy;
   if ((m.startsWith('uc') || m === 'glm-image') && ucProxy) return ucProxy;
   if ((m.startsWith('veo') || m === 'nano-banana') && veoProxy) return veoProxy;
+  if ((m.startsWith('notrack')) && notrackProxy) return notrackProxy;
+  if ((m.startsWith('t3')) && t3Proxy) return t3Proxy;
+  if ((m.startsWith('venice')) && veniceProxy) return veniceProxy;
+  if ((m.startsWith('poe')) && poeProxy) return poeProxy;
+  if ((m.startsWith('arena') || m.startsWith('lmarena')) && arenaProxy) return arenaProxy;
+  if ((m.startsWith('zenmux')) && zenmuxProxy) return zenmuxProxy;
+  if ((m.startsWith('blackbox')) && blackboxProxy) return blackboxProxy;
+  if ((m.startsWith('inner')) && innerProxy) return innerProxy;
+  if ((m.startsWith('adapta')) && adaptaProxy) return adaptaProxy;
+  if ((m.startsWith('muse') || m.startsWith('meta-ai') || m === 'meta') && museProxy) return museProxy;
+  if ((m.startsWith('tinycms') || m.startsWith('freegpt')) && tinycmsProxy) return tinycmsProxy;
+  if ((m.startsWith('maxai') || m.startsWith('max-ai')) && maxaiProxy) return maxaiProxy;
 
   if (
     huggingfaceProxy &&
@@ -100,6 +126,18 @@ function collectModels() {
   add(opencodeProxy, 'opencode');
   add(ucProxy, 'uc');
   add(veoProxy, 'veo');
+  add(notrackProxy, 'notrack');
+  add(t3Proxy, 't3');
+  add(veniceProxy, 'venice');
+  add(poeProxy, 'poe');
+  add(arenaProxy, 'arena');
+  add(zenmuxProxy, 'zenmux');
+  add(blackboxProxy, 'blackbox');
+  add(innerProxy, 'inner');
+  add(adaptaProxy, 'adapta');
+  add(museProxy, 'muse');
+  add(tinycmsProxy, 'tinycms');
+  add(maxaiProxy, 'maxai');
   return models;
 }
 
@@ -195,6 +233,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(
-    `proxy on ${PORT} · admin /admin · providers: deepseek kimi mistral hf perplexity grok opencode uc veo`
+    `proxy on ${PORT} · admin /admin · providers: deepseek kimi mistral hf perplexity grok opencode uc veo + tier1 web`
   );
 });

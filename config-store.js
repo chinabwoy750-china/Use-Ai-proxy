@@ -31,6 +31,20 @@ const KEYS = [
   'HF_COOKIE',
   'OPENCODE_ENABLED',
   'VEO_ENABLED',
+  'NOTRACK_COOKIE',
+  'T3_COOKIE',
+  'VENICE_COOKIE',
+  'POE_COOKIE',
+  'ARENA_COOKIE',
+  'ZENMUX_COOKIE',
+  'BLACKBOX_COOKIE',
+  'INNER_COOKIE',
+  'INNER_TOKEN',
+  'ADAPTA_COOKIE',
+  'MUSE_COOKIE',
+  'META_AI_COOKIE',
+  'TINYCMS_COOKIE',
+  'MAXAI_COOKIE',
 ];
 
 const SENSITIVE = new Set(
@@ -124,6 +138,18 @@ function getPublicProviders() {
     huggingface: !!(process.env.HF_CHAT_COOKIE || process.env.HF_COOKIE),
     opencode: process.env.OPENCODE_ENABLED !== '0',
     veo: process.env.VEO_ENABLED !== '0',
+    notrack: !!process.env.NOTRACK_COOKIE,
+    t3: !!process.env.T3_COOKIE,
+    venice: !!process.env.VENICE_COOKIE,
+    poe: !!process.env.POE_COOKIE,
+    arena: !!process.env.ARENA_COOKIE,
+    zenmux: !!process.env.ZENMUX_COOKIE,
+    blackbox: !!process.env.BLACKBOX_COOKIE,
+    inner: !!(process.env.INNER_COOKIE || process.env.INNER_TOKEN),
+    adapta: !!process.env.ADAPTA_COOKIE,
+    muse: !!(process.env.MUSE_COOKIE || process.env.META_AI_COOKIE),
+    tinycms: !!process.env.TINYCMS_COOKIE,
+    maxai: !!process.env.MAXAI_COOKIE,
   };
 }
 
