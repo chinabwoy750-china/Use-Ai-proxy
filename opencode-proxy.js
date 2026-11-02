@@ -1,27 +1,46 @@
 'use strict';
 /**
  * OpenCode Free → OpenAI SSE
- * No user API key — Authorization: Bearer public
- * May 403 FreeTierError without browser-like TLS (wreq). Best-effort on Render.
+ * Base: https://opencode.ai/inference/openai/v1
+ * Auth: Bearer public (free lane). May 429 FreeUsageLimitError per IP.
  */
 const crypto = require('crypto');
 
-const BASE = process.env.OPENCODE_URL || 'https://opencode.ai';
-const CHAT_URL = `${BASE}/inference/v1/chat/completions`;
+const BASE = (process.env.OPENCODE_URL || 'https://opencode.ai').replace(/\/$/, '');
+const CHAT_URL = `${BASE}/inference/openai/v1/chat/completions`;
 const OPENCODE_UA = 'opencode/1.18.31';
 const OPENCODE_CLIENT = 'desktop';
 const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
 const MODELS = [
-  { slug: 'opencode', id: 'muse-spark-1.3-contributor-free' },
-  { slug: 'opencode-muse', id: 'muse-spark-1.3-contributor-free' },
-  { slug: 'opencode-muse-1.2', id: 'muse-spark-1.2-contributor-free' },
-  { slug: 'opencode-union', id: 'union-alpha' },
+  { slug: 'opencode', id: 'big-pickle' },
+  { slug: 'opencode-big-pickle', id: 'big-pickle' },
+  { slug: 'big-pickle', id: 'big-pickle' },
+  { slug: 'opencode-beam', id: 'beam-free' },
+  { slug: 'beam-free', id: 'beam-free' },
+  { slug: 'opencode-flint', id: 'flint-40b-free' },
+  { slug: 'flint-40b-free', id: 'flint-40b-free' },
+  { slug: 'opencode-mimo', id: 'mimo-v2.6-flash-free' },
+  { slug: 'mimo-v2.6-flash-free', id: 'mimo-v2.6-flash-free' },
+  { slug: 'opencode-deepseek', id: 'deepseek-v4.1-flash-free' },
+  { slug: 'deepseek-v4.1-flash-free', id: 'deepseek-v4.1-flash-free' },
+  { slug: 'opencode-glm', id: 'glm-5.3-flash-free' },
+  { slug: 'glm-5.3-flash-free', id: 'glm-5.3-flash-free' },
+  { slug: 'opencode-nemotron', id: 'nemotron-3.5-lightning-free' },
+  { slug: 'nemotron-3.5-lightning-free', id: 'nemotron-3.5-lightning-free' },
+  { slug: 'nemotron-3.5-super-vl-free', id: 'nemotron-3.5-super-vl-free' },
 ];
 
 function modelInfo(name) {
-  const m = String(name || '').toLowerCase().replace(/^opencode\//, '');
-  return MODELS.find((x) => x.slug === m) || MODELS[0];
+  const m = String(name || '')
+    .toLowerCase()
+    .replace(/^opencode\//, '')
+    .replace(/^myproxy\//, '');
+  const bySlug = MODELS.find((x) => x.slug === m);
+  if (bySlug) return bySlug;
+  const byId = MODELS.find((x) => x.id === m);
+  if (byId) return byId;
+  return { slug: m || 'opencode', id: m || 'big-pickle' };
 }
 
 function enabled() {
@@ -32,7 +51,9 @@ function generateSessionId() {
   const time = Date.now();
   const counter = Math.floor(Math.random() * 8);
   const mask = (1n << 48n) - 1n;
-  const prefix = (~(BigInt(time) * 0x1000n + BigInt(counter)) & mask).toString(16).padStart(12, '0');
+  const prefix = (~(BigInt(time) * 0x1000n + BigInt(counter)) & mask)
+    .toString(16)
+    .padStart(12, '0');
   let rand = '';
   const bytes = crypto.randomBytes(14);
   for (let i = 0; i < 14; i++) rand += BASE62[bytes[i] % 62];
@@ -86,8 +107,9 @@ async function handle(opts, res) {
     model: info.id,
     messages: opts.messages || [],
     stream: true,
-    temperature: opts.temperature,
+    max_tokens: opts.max_tokens || 2048,
   };
+  if (opts.temperature != null) body.temperature = opts.temperature;
 
   try {
     const r = await fetch(CHAT_URL, {
@@ -109,7 +131,7 @@ async function handle(opts, res) {
 
     if (!r.ok) {
       const t = await r.text().catch(() => '');
-      throw new Error(`OpenCode ${r.status}: ${t.slice(0, 220)}`);
+      throw new Error(`OpenCode ${r.status}: ${t.slice(0, 280)}`);
     }
 
     const reader = r.body.getReader();
@@ -164,7 +186,7 @@ async function handle(opts, res) {
             index: 0,
             delta: {
               content:
-                '\n\n[Error: OpenCode empty/403 — free tier often requires browser TLS (wreq). Try from a VPS or use another provider.]',
+                '\n\n[Error: OpenCode empty reply — free limit or upstream issue. Try big-pickle / beam-free later.]',
             },
             finish_reason: null,
           },
