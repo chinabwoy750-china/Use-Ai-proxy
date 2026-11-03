@@ -286,6 +286,7 @@ async function renderDash(){
   try {
     statusMap = await api('/api/admin/status');
     health = await fetch('/health').then(r=>r.json()).catch(()=>({}));
+    try{ const m = document.getElementById('redisMeta'); if(m) m.textContent = health.redis ? 'Upstash Redis: connected' : 'Upstash Redis: not configured (keys only in memory/disk)'; }catch(e){}
   } catch(e) {
     renderLogin();
     return;

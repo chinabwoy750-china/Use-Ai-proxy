@@ -1,14 +1,15 @@
 'use strict';
 /**
- * Runtime config: env vars + optional data/config.json override.
- * On Render free the disk is ephemeral — set env for persistence.
- * Admin can still apply live values for the current process.
+ * Runtime config: process.env + optional data/config.json + optional Upstash Redis.
+ * Priority on load: Redis (if configured) > local file > existing env.
+ * Saves go to Redis (durable on Render) and local file (dev).
  */
 const fs = require('fs');
 const path = require('path');
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const CONFIG_PATH = path.join(DATA_DIR, 'config.json');
+const REDIS_KEY = process.env.CONFIG_REDIS_KEY || 'useai-proxy:config';
 
 const KEYS = [
   'ADMIN_PASSWORD',
@@ -76,9 +77,61 @@ const KEYS = [
 const SENSITIVE = new Set(
   KEYS.filter(
     (k) =>
-      /TOKEN|COOKIE|PASSWORD|KEY|ACCOUNTS/i.test(k) && k !== 'OPENCODE_ENABLED' && k !== 'VEO_ENABLED'
+      /TOKEN|COOKIE|PASSWORD|KEY|ACCOUNTS/i.test(k) &&
+      k !== 'OPENCODE_ENABLED' &&
+      k !== 'VEO_ENABLED'
   )
 );
+
+function redisConfigured() {
+  return !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+}
+
+async function redisCommand(args) {
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!url || !token) return null;
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(args),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => '');
+    throw new Error(`Upstash ${r.status}: ${t.slice(0, 200)}`);
+  }
+  const j = await r.json();
+  return j && Object.prototype.hasOwnProperty.call(j, 'result') ? j.result : j;
+}
+
+async function readRedisConfig() {
+  if (!redisConfigured()) return null;
+  try {
+    const raw = await redisCommand(['GET', REDIS_KEY]);
+    if (!raw) return {};
+    if (typeof raw === 'object') return raw;
+    const j = JSON.parse(String(raw));
+    return j && typeof j === 'object' ? j : {};
+  } catch (err) {
+    console.error('[config] redis GET failed:', err.message || err);
+    return null;
+  }
+}
+
+async function writeRedisConfig(obj) {
+  if (!redisConfigured()) return false;
+  const clean = {};
+  for (const k of KEYS) {
+    if (obj[k] !== undefined && obj[k] !== null && String(obj[k]) !== '') {
+      clean[k] = String(obj[k]);
+    }
+  }
+  await redisCommand(['SET', REDIS_KEY, JSON.stringify(clean)]);
+  return true;
+}
 
 function ensureDir() {
   try {
@@ -101,13 +154,14 @@ function writeFileConfig(obj) {
   ensureDir();
   const clean = {};
   for (const k of KEYS) {
-    if (obj[k] !== undefined && obj[k] !== null) clean[k] = String(obj[k]);
+    if (obj[k] !== undefined && obj[k] !== null && String(obj[k]) !== '') {
+      clean[k] = String(obj[k]);
+    }
   }
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(clean, null, 2), 'utf8');
   return clean;
 }
 
-/** Apply key/value into process.env (live). */
 function applyEnv(obj) {
   for (const [k, v] of Object.entries(obj || {})) {
     if (!KEYS.includes(k)) continue;
@@ -119,29 +173,52 @@ function applyEnv(obj) {
   }
 }
 
-/** Load file config over env at startup. */
-function bootstrap() {
+/**
+ * Load order: start with env (Render dashboard), then file, then Redis wins for set keys.
+ * ADMIN_PASSWORD from env is kept if Redis does not define it (so you can always boot).
+ */
+async function bootstrap() {
   const file = readFileConfig();
   applyEnv(file);
+
+  const redis = await readRedisConfig();
+  if (redis && typeof redis === 'object') {
+    const envAdmin = process.env.ADMIN_PASSWORD;
+    applyEnv(redis);
+    // If Redis had no admin password but Render env does, keep env
+    if (!redis.ADMIN_PASSWORD && envAdmin) {
+      process.env.ADMIN_PASSWORD = envAdmin;
+    }
+    console.log(`[config] loaded ${Object.keys(redis).length} keys from Upstash Redis`);
+  } else if (redisConfigured()) {
+    console.log('[config] Upstash configured but empty or failed — using env/file');
+  } else {
+    console.log('[config] no Upstash — using env + local file only');
+  }
   return status();
 }
 
 function status() {
   const file = readFileConfig();
-  const out = {};
+  const out = {
+    _meta: {
+      redis: redisConfigured(),
+      redisKey: REDIS_KEY,
+      filePath: CONFIG_PATH,
+    },
+  };
   for (const k of KEYS) {
     const fromEnv = process.env[k];
     const fromFile = file[k];
     const val = fromEnv || fromFile || '';
     const configured = !!(val && String(val).trim());
+    let source = 'none';
+    if (fromEnv) source = redisConfigured() ? 'runtime' : 'env';
+    if (!fromEnv && fromFile) source = 'file';
     out[k] = {
       configured,
-      source: fromEnv ? 'env' : fromFile ? 'file' : 'none',
-      preview: configured
-        ? SENSITIVE.has(k)
-          ? mask(val)
-          : String(val).slice(0, 80)
-        : '',
+      source: configured ? source : 'none',
+      preview: configured ? (SENSITIVE.has(k) ? mask(val) : String(val).slice(0, 80)) : '',
     };
   }
   return out;
@@ -190,34 +267,60 @@ function getPublicProviders() {
     conol: !!process.env.CONOL_COOKIE,
     twinmind: !!(process.env.TWINMIND_TOKEN || process.env.TWINMIND_JWT),
     syntx: !!(process.env.SYNTX_TOKEN || process.env.SYNTX_JWT),
+    redis: redisConfigured(),
   };
 }
 
-function saveFromAdmin(body) {
+async function saveFromAdmin(body) {
   const incoming = {};
   for (const k of KEYS) {
     if (body[k] === undefined) continue;
-    // empty string = clear only if explicit clear flag
     if (body[k] === '' && body._clear && body._clear[k]) {
       incoming[k] = '';
       continue;
     }
-    if (body[k] === '') continue; // don't wipe secrets on partial save
+    if (body[k] === '') continue;
     incoming[k] = String(body[k]);
   }
-  const prev = readFileConfig();
-  const merged = { ...prev, ...incoming };
+
+  const prevFile = readFileConfig();
+  let prevRedis = {};
+  try {
+    prevRedis = (await readRedisConfig()) || {};
+  } catch (_) {}
+  const merged = { ...prevFile, ...prevRedis, ...incoming };
   for (const k of Object.keys(incoming)) {
     if (incoming[k] === '') delete merged[k];
   }
+
   writeFileConfig(merged);
   applyEnv(incoming);
-  return status();
+
+  let redisOk = false;
+  let redisError = null;
+  try {
+    redisOk = await writeRedisConfig(merged);
+  } catch (err) {
+    redisError = err.message || String(err);
+    console.error('[config] redis SET failed:', redisError);
+  }
+
+  const st = status();
+  st._meta = st._meta || {};
+  st._meta.savedToRedis = redisOk;
+  if (redisError) st._meta.redisError = redisError;
+  return st;
 }
 
 function checkAdminAuth(req) {
   const expected = process.env.ADMIN_PASSWORD || process.env.ADMIN_TOKEN || '';
-  if (!expected) return { ok: false, reason: 'ADMIN_PASSWORD not set' };
+  if (!expected) {
+    return {
+      ok: false,
+      reason:
+        'ADMIN_PASSWORD not set. Set it in Render Environment (and optionally save via admin after Redis is connected).',
+    };
+  }
   const h = req.headers || {};
   const auth = h.authorization || h.Authorization || '';
   let token = '';
@@ -228,8 +331,12 @@ function checkAdminAuth(req) {
       token = dec.split(':').slice(1).join(':') || dec;
     } catch (_) {}
   }
-  const q = (req.url || '').includes('token=') ? new URL(req.url, 'http://x').searchParams.get('token') : null;
-  if (q) token = q;
+  try {
+    if ((req.url || '').includes('token=')) {
+      const q = new URL(req.url, 'http://x').searchParams.get('token');
+      if (q) token = q;
+    }
+  } catch (_) {}
   const x = h['x-admin-token'] || h['x-admin-password'];
   if (x) token = String(x);
   if (token && token === expected) return { ok: true };
@@ -241,6 +348,8 @@ module.exports = {
   SENSITIVE,
   DATA_DIR,
   CONFIG_PATH,
+  REDIS_KEY,
+  redisConfigured,
   bootstrap,
   status,
   saveFromAdmin,

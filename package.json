@@ -1,7 +1,7 @@
 {
   "name": "useai-proxy",
-  "version": "3.3.0",
-  "description": "OpenAI-compatible multi-provider web proxy + admin (tier1)",
+  "version": "3.4.0",
+  "description": "OpenAI-compatible multi-provider proxy + admin + Upstash Redis config",
   "main": "server.js",
   "engines": {
     "node": ">=18"

@@ -11,7 +11,6 @@ process.on('unhandledRejection', (err) => {
   console.error('[unhandledRejection]', err && err.message ? err.message : err);
 });
 
-config.bootstrap();
 
 function load(name) {
   try {
@@ -227,7 +226,7 @@ const server = http.createServer(async (req, res) => {
       } catch {
         return sendJson(res, 400, { error: 'bad json' });
       }
-      const st = config.saveFromAdmin(body);
+      const st = await config.saveFromAdmin(body);
       return sendJson(res, 200, st);
     }
 
@@ -281,8 +280,20 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(
-    `proxy on ${PORT} · admin /admin · providers: deepseek kimi mistral hf perplexity grok opencode uc veo + tier1 + tier4 + tier5`
-  );
+async function main() {
+  try {
+    await config.bootstrap();
+  } catch (err) {
+    console.error('[config] bootstrap error', err && err.message ? err.message : err);
+  }
+  const PORT = Number(process.env.PORT || 3000);
+  server.listen(PORT, () => {
+    console.log(
+      `proxy on ${PORT} · admin /admin · redis=${config.redisConfigured() ? 'on' : 'off'} · providers loaded`
+    );
+  });
+}
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
 });
