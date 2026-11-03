@@ -137,96 +137,74 @@ function stripInstructionLeak(text) {
   // fn_spec / tools_spec wrappers (full + partial / unclosed)
   s = s.replace(/<fn_spec\b[^>]*>[\s\S]*?<\/fn_spec>\s*/gi, '');
   s = s.replace(/<fn_spec\b[^>]*>[\s\S]*$/gi, '');
-  s = s.replace(/<\/fn_spec>\s*/gi, '');
   s = s.replace(/<tools_spec\b[^>]*>[\s\S]*?<\/tools_spec>\s*/gi, '');
   s = s.replace(/<tools_spec\b[^>]*>[\s\S]*$/gi, '');
   s = s.replace(/<\/tools_spec>\s*/gi, '');
-  // partial open tags glued to reply
+  s = s.replace(/<\/fn_spec>\s*/gi, '');
   s = s.replace(/^\s*<tools_spec\b[^>]*>\s*/i, '');
   s = s.replace(/^\s*<fn_spec\b[^>]*>\s*/i, '');
 
-  // "Tools: foo, bar." or "Tools:Hi there" (common Kimi echo)
-  s = s.replace(/^\s*Tools\s*:\s*[^\n]*\n?/i, '');
-  s = s.replace(/^\s*Tools\s*:\s*/i, '');
-  s = s.replace(/^\s*Functions\s*:\s*[^\n]*\n?/i, '');
-  s = s.replace(/^\s*Functions\s*:\s*/i, '');
-  // Short Kimi injection echo
-  s = s.replace(/^\s*\(You may call:[^)]*\)\s*/i, '');
-  s = s.replace(/\(You may call:[^)]*\)\s*/gi, '');
-  s = s.replace(/^\s*Schemas\s*:\s*\n?/i, '');
-  s = s.replace(/^\s*-\s+[a-zA-Z0-9_.-]+:[^\n]*\n/gm, ''); // schema lines if leaked
+  // Closed "(You may call: ...)"
+  s = s.replace(/\(\s*You may call:[^)]*\)\s*/gi, '');
+  // Unclosed "(You may call: tool_a, tool_b" glued to greeting (webHi → keep Hi)
+  // Tool ids are snake_case / lowercase only — stop before a capital letter.
+  s = s.replace(
+    /\(\s*You may call:\s*(?:[a-z][a-z0-9_.\-]*(?:\s*,\s*)?)*\s*/g,
+    ''
+  );
+  s = s.replace(/^\s*You may call:\s*(?:[a-z][a-z0-9_.\-]*(?:\s*,\s*)?)+\s*/g, '');
+  // Bare leftover tool fragment glued to greeting: webHi / searchHello
+  s = s.replace(
+    /(?:^|[\s,])(?:web_search|web_browse|web_open|web_read|browser|search|browse|web)(?=[A-Z])/g,
+    ''
+  );
 
-  // Legacy [SYSTEM]…[END SYSTEM]
-  s = s.replace(/\[SYSTEM[\s\S]*?\[END SYSTEM\]\s*/gi, '');
-  s = s.replace(/\[SYSTEM\s*[—\-–]*\s*DO NOT ECHO THIS BLO(?:CK)?/gi, '');
-  s = s.replace(/\[SYSTEM[^\]\n]{0,100}\]/g, '');
-  s = s.replace(/\[END SYSTEM\]\s*/gi, '');
-  s = s.replace(/DO NOT ECHO THIS BLOCK\]?/gi, '');
-  s = s.replace(/DO NOT ECHO THIS BLO(?:CK)?/gi, '');
-
-  s = s.replace(/To call a tool, output ONLY this XML[\s\S]{0,400}?<\/\|DSML\|tool_calls>/gi, '');
-  s = s.replace(/If you need a function, output ONLY this XML[\s\S]{0,400}?<\/\|DSML\|tool_calls>/gi, '');
-  s = s.replace(/You can call tools when needed:[^\n]*\n?/gi, '');
-  s = s.replace(/Never invent disk\/files\/shell facts[^\n]*\n?/gi, '');
-  s = s.replace(/Do not invent system facts[^\n]*\n?/gi, '');
-  s = s.replace(/For device\/system questions[^\n]*\n?/gi, '');
-  s = s.replace(/For normal chat with no tool needed[^\n]*\n?/gi, '');
-  s = s.replace(/When a tool is required[^\n]*\n?/gi, '');
-
+  // Hermes / agent instruction banners
   s = s.replace(/TOOL CALL FORMAT[\s\S]*?(?:no tool XML\.?\s*)/i, '');
   s = s.replace(/^[\s\S]{0,40}?TOOL CALL FORMAT[^\n]*\n?/i, '');
   s = s.replace(/^\s*TOOL CALL FORMAT[^\n]*\n?/i, '');
-  s = s.replace(/^\s*FOLLOW EXAC[A-Z]*\s*/i, '');
+  s = s.replace(/^\s*FOLLOW EXACT[^\n]*\n?/i, '');
+  s = s.replace(/Tools:\s*[^\n]*\n?/gi, '');
 
-  // DSML example block echo without closing tag fully
-  s = s.replace(/<\|DSML\|tool_calls>[\s\S]*?<\/\|DSML\|tool_calls>/gi, (m) => {
-    // keep real tool calls — only strip if it looks like the template
-    if (/TOOL_NAME|NAME>|ARG>/.test(m)) return '';
-    return m;
-  });
+  // Common Kimi / agent preambles that are not the answer
+  s = s.replace(/^\s*\[Available tools[^\]]*\]\s*/i, '');
+  s = s.replace(/^\s*Available tools:\s*[^\n]*\n?/i, '');
 
+  // Strip leftover leading punctuation from partial removals
+  s = s.replace(/^[\s,;:.\-]+/, '');
   return s;
 }
 
-/**
- * Stateful stripper for streaming: hold leading junk until real content appears.
- */
+
 class LeakStripStream {
   constructor() {
     this.buf = '';
-    this.done = false;
+    this.released = false;
   }
   push(chunk) {
     if (!chunk) return '';
-    if (this.done) return stripInstructionLeak(chunk);
+    // Always strip leaks; buffer while unclosed "(You may call:" is open
     this.buf += chunk;
-    const cleaned = stripInstructionLeak(this.buf);
-    // Still only whitespace / empty after strip → keep buffering (limit)
-    if (!cleaned.trim()) {
-      if (this.buf.length > 4000) {
-        this.done = true;
-        this.buf = '';
-        return cleaned;
-      }
+    const openCall = /\(\s*You may call:/i.test(this.buf) && !/\(\s*You may call:[^)]*\)/i.test(this.buf);
+    const openSpec = /<(?:tools_spec|fn_spec)\b/i.test(this.buf) && !/<\/(?:tools_spec|fn_spec)>/i.test(this.buf);
+    if ((openCall || openSpec) && this.buf.length < 8000) {
       return '';
     }
-    // Emit cleaned so far; further chunks pass through with light strip
-    this.done = true;
+    const cleaned = stripInstructionLeak(this.buf);
     this.buf = '';
+    this.released = true;
     return cleaned;
   }
   flush() {
-    if (this.done || !this.buf) return '';
+    if (!this.buf) return '';
     const cleaned = stripInstructionLeak(this.buf);
     this.buf = '';
-    this.done = true;
+    this.released = true;
     return cleaned;
   }
 }
 
-/**
- * Streaming buffer: holds back output once a tool-call opener is seen.
- */
+
 class StreamToolSieve {
   constructor(enabled) {
     this.enabled = !!enabled;
