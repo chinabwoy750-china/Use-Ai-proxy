@@ -55,6 +55,13 @@ const notionProxy = load('./providers/notion-proxy');
 const cloudflareProxy = load('./providers/cloudflare-proxy');
 const longcatProxy = load('./providers/longcat-proxy');
 
+const promptqlProxy = load('./providers/promptql-proxy');
+const hyperagentProxy = load('./providers/hyperagent-proxy');
+const conolProxy = load('./providers/conol-proxy');
+const twinmindProxy = load('./providers/twinmind-proxy');
+const syntxProxy = load('./providers/syntx-proxy');
+
+
 
 
 const PORT = process.env.PORT || 3000;
@@ -92,6 +99,13 @@ function routeProxy(model) {
   if ((m.startsWith('notion')) && notionProxy) return notionProxy;
   if ((m.startsWith('cloudflare') || m.startsWith('cf-ai') || m.startsWith('workers-ai')) && cloudflareProxy) return cloudflareProxy;
   if ((m.startsWith('longcat')) && longcatProxy) return longcatProxy;
+
+  if ((m.startsWith('promptql') || m.startsWith('prompt-ql')) && promptqlProxy) return promptqlProxy;
+  if ((m.startsWith('hyperagent') || m.startsWith('hyper-agent')) && hyperagentProxy) return hyperagentProxy;
+  if ((m.startsWith('conol')) && conolProxy) return conolProxy;
+  if ((m.startsWith('twinmind') || m.startsWith('twin-mind')) && twinmindProxy) return twinmindProxy;
+  if ((m.startsWith('syntx')) && syntxProxy) return syntxProxy;
+
 
 
   if (
@@ -169,6 +183,11 @@ function collectModels() {
   add(notionProxy, 'notion');
   add(cloudflareProxy, 'cloudflare');
   add(longcatProxy, 'longcat');
+  add(promptqlProxy, 'promptql');
+  add(hyperagentProxy, 'hyperagent');
+  add(conolProxy, 'conol');
+  add(twinmindProxy, 'twinmind');
+  add(syntxProxy, 'syntx');
   return models;
 }
 
@@ -264,6 +283,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   console.log(
-    `proxy on ${PORT} · admin /admin · providers: deepseek kimi mistral hf perplexity grok opencode uc veo + tier1 + tier5`
+    `proxy on ${PORT} · admin /admin · providers: deepseek kimi mistral hf perplexity grok opencode uc veo + tier1 + tier4 + tier5`
   );
 });

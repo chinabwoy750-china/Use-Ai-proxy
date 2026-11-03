@@ -187,6 +187,23 @@ const PROVIDERS = [
     fields:[{key:'LONGCAT_API_KEY', label:'API Key', secret:true}],
     site:'https://longcat.chat', models:'longcat, longcat-lite' },
 
+
+  { id:'promptql', name:'PromptQL (experimental)', color:'#7C3AED', text:'PQ',
+    fields:[{key:'PROMPTQL_TOKEN', label:'Bearer JWT (enrich-token)', secret:true, area:true}],
+    site:'https://prompt.ql.app', models:'promptql' },
+  { id:'hyperagent', name:'HyperAgent (experimental)', color:'#0F766E', text:'HA',
+    fields:[{key:'HYPERAGENT_COOKIE', label:'Full Cookie header', secret:true, area:true}],
+    site:'https://hyperagent.com', models:'hyperagent' },
+  { id:'conol', name:'Conol (experimental)', color:'#BE185D', text:'Co',
+    fields:[{key:'CONOL_COOKIE', label:'Session cookie', secret:true, area:true}],
+    site:'https://conol.ai', models:'conol' },
+  { id:'twinmind', name:'Twinmind (experimental)', color:'#1D4ED8', text:'TM',
+    fields:[{key:'TWINMIND_TOKEN', label:'Firebase JWT / sts JSON', secret:true, area:true}],
+    site:'https://app.twinmind.com', models:'twinmind' },
+  { id:'syntx', name:'SYNTX.ai (experimental)', color:'#B45309', text:'SX',
+    fields:[{key:'SYNTX_TOKEN', label:'Bearer JWT', secret:true, area:true}],
+    site:'https://syntx.ai', models:'syntx' },
+
   { id:'veo', name:'Veo Free (media)', color:'#EA4335', text:'V',
     fields:[
       {key:'VEO_ENABLED', label:'Enabled (1 or 0)', placeholder:'1'},

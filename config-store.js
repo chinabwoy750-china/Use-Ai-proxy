@@ -63,6 +63,14 @@ const KEYS = [
   'CLOUDFLARE_ACCOUNT_ID',
   'LONGCAT_API_KEY',
   'LONGCAT_KEY',
+  'PROMPTQL_TOKEN',
+  'PROMPTQL_JWT',
+  'HYPERAGENT_COOKIE',
+  'CONOL_COOKIE',
+  'TWINMIND_TOKEN',
+  'TWINMIND_JWT',
+  'SYNTX_TOKEN',
+  'SYNTX_JWT',
 ];
 
 const SENSITIVE = new Set(
@@ -177,6 +185,11 @@ function getPublicProviders() {
     notion: !!(process.env.NOTION_COOKIE || process.env.NOTION_TOKEN_V2),
     cloudflare: !!(process.env.CF_API_TOKEN || process.env.CLOUDFLARE_API_TOKEN),
     longcat: !!(process.env.LONGCAT_API_KEY || process.env.LONGCAT_KEY),
+    promptql: !!(process.env.PROMPTQL_TOKEN || process.env.PROMPTQL_JWT),
+    hyperagent: !!process.env.HYPERAGENT_COOKIE,
+    conol: !!process.env.CONOL_COOKIE,
+    twinmind: !!(process.env.TWINMIND_TOKEN || process.env.TWINMIND_JWT),
+    syntx: !!(process.env.SYNTX_TOKEN || process.env.SYNTX_JWT),
   };
 }
 
