@@ -3,6 +3,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config-store');
+const catalog = require('./providers-catalog');
 
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err && err.message ? err.message : err);
@@ -228,6 +229,61 @@ const server = http.createServer(async (req, res) => {
       }
       const st = await config.saveFromAdmin(body);
       return sendJson(res, 200, st);
+    }
+
+    
+    if (pathname === '/providers' || pathname === '/providers/') {
+      const html = path.join(PUBLIC, 'providers.html');
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(fs.readFileSync(html));
+    }
+
+    if (pathname === '/api/providers-catalog' && req.method === 'GET') {
+      return sendJson(res, 200, {
+        providers: catalog.PROVIDERS,
+        icons: catalog.listIconFiles(),
+      });
+    }
+
+    if (pathname === '/api/admin/console-script' && req.method === 'GET') {
+      const auth = config.checkAdminAuth(req);
+      // allow without auth so copy still works from admin after login; still ok public-ish
+      const u = new URL(req.url, 'http://x');
+      const id = u.searchParams.get('id') || '';
+      const prov = catalog.PROVIDERS.find((x) => x.id === id);
+      if (!prov) return sendJson(res, 404, { error: 'unknown provider' });
+      return sendJson(res, 200, {
+        id: prov.id,
+        site: prov.site,
+        script: catalog.scraperFor(prov),
+      });
+    }
+
+    if (pathname === '/api/admin/icon' && req.method === 'POST') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason });
+      const raw = await readBody(req);
+      let body;
+      try { body = JSON.parse(raw || '{}'); } catch { return sendJson(res, 400, { error: 'bad json' }); }
+      try {
+        const url = catalog.saveIcon(body.id, body.mime || 'image/png', body.data || '');
+        return sendJson(res, 200, { ok: true, url, icons: catalog.listIconFiles() });
+      } catch (e) {
+        return sendJson(res, 400, { error: e.message || String(e) });
+      }
+    }
+
+    // static icons
+    if (pathname.startsWith('/icons/')) {
+      const name = path.basename(pathname);
+      const file = path.join(PUBLIC, 'icons', name);
+      if (!file.startsWith(path.join(PUBLIC, 'icons')) || !fs.existsSync(file)) {
+        res.writeHead(404); return res.end('not found');
+      }
+      const ext = path.extname(file).toLowerCase();
+      const types = { '.png': 'image/png', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg' };
+      res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': 'public, max-age=3600' });
+      return res.end(fs.readFileSync(file));
     }
 
     if (pathname === '/health' || pathname === '/') {

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="theme-color" content="#000"/>
+<title>Providers · Use-AI Proxy</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+:root{color-scheme:dark;--bg:#000;--panel:#0a0a0a;--line:#232323;--text:#ededed;--muted:#9a9a9a;--accent:#3d7dff;--r:12px;--font:"DM Sans",system-ui,sans-serif;--mono:"JetBrains Mono",monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:400 14px/1.5 var(--font)}
+.wrap{max-width:1100px;margin:0 auto;padding:24px 16px 64px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:24px}
+h1{margin:0;font-size:20px;font-weight:600}
+.sub{color:var(--muted);font-size:13px}
+a{color:var(--accent);text-decoration:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px}
+.icon-box{width:64px;height:64px;border-radius:14px;display:grid;place-items:center;overflow:hidden;background:#161616;border:1px solid var(--line)}
+.icon-box img{width:100%;height:100%;object-fit:cover}
+.icon-box span{font-weight:700;font-size:18px;color:#fff}
+.name{font-size:13px;font-weight:600}
+.meta{font-size:11px;color:var(--muted);word-break:break-all}
+.row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+button,.btn{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 12px;font:500 12px var(--font);cursor:pointer}
+button.secondary{background:#1b1b1b;border:1px solid var(--line);color:var(--text)}
+input[type=file]{font-size:11px;color:var(--muted);max-width:140px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#161616;border:1px solid var(--line);padding:10px 16px;border-radius:8px;opacity:0;transition:.2s;pointer-events:none;z-index:9}
+.toast.show{opacity:1}
+.login{max-width:360px;margin:10vh auto;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:24px}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+input[type=password],input[type=text]{width:100%;background:#101010;border:1px solid var(--line);border-radius:8px;color:var(--text);padding:10px;margin-bottom:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Providers</h1>
+      <div class="sub">Icons for the catalog · upload PNG/SVG · same style as admin cards</div>
+    </div>
+    <div class="row">
+      <a class="btn secondary" href="/admin">Admin</a>
+      <a class="btn secondary" href="/v1/models">Models</a>
+      <a class="btn secondary" href="/health">Health</a>
+    </div>
+  </header>
+  <div id="authNote" class="sub" style="margin-bottom:16px">Login with admin password to upload icons.</div>
+  <div id="loginBox" class="login" style="display:none">
+    <label>Admin password</label>
+    <input id="pw" type="password" placeholder="ADMIN_PASSWORD"/>
+    <button id="loginBtn">Unlock uploads</button>
+  </div>
+  <div id="grid" class="grid"></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const PROVIDERS = window.__PROVIDERS || [];
+let token = sessionStorage.getItem('admin_token') || '';
+
+function toast(m,ok){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500)}
+
+async function loadList(){
+  const r = await fetch('/api/providers-catalog');
+  const j = await r.json();
+  return j.providers || [];
+}
+
+function iconUrl(id, icons){
+  if (icons && icons[id]) return icons[id] + '?t=' + Date.now();
+  return null;
+}
+
+function render(list, icons){
+  document.getElementById('grid').innerHTML = list.map(p => {
+    const src = iconUrl(p.id, icons);
+    const icon = src
+      ? `<img src="${src}" alt="${p.id}"/>`
+      : `<span style="background:${p.color||'#333'};width:100%;height:100%;display:grid;place-items:center">${p.text||p.id.slice(0,2).toUpperCase()}</span>`;
+    return `<article class="card" data-id="${p.id}">
+      <div class="icon-box">${icon}</div>
+      <div class="name">${p.name}</div>
+      <div class="meta">${p.id}</div>
+      <div class="row">
+        <label class="secondary btn" style="cursor:pointer">
+          Upload
+          <input type="file" accept="image/png,image/svg+xml,image/webp,image/jpeg" hidden data-upload="${p.id}"/>
+        </label>
+      </div>
+    </article>`;
+  }).join('');
+
+  document.querySelectorAll('[data-upload]').forEach(inp => {
+    inp.onchange = async () => {
+      if (!token) { toast('Login first', false); document.getElementById('loginBox').style.display='block'; return; }
+      const file = inp.files && inp.files[0];
+      if (!file) return;
+      const id = inp.getAttribute('data-upload');
+      const dataUrl = await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = reject;
+        fr.readAsDataURL(file);
+      });
+      const mime = file.type || 'image/png';
+      const b64 = String(dataUrl).split(',')[1] || '';
+      const r = await fetch('/api/admin/icon', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+        body: JSON.stringify({ id, mime, data: b64 })
+      });
+      const j = await r.json().catch(()=>({}));
+      if (!r.ok) { toast(j.error || r.statusText, false); return; }
+      toast('Icon saved for '+id, true);
+      boot();
+    };
+  });
+}
+
+async function boot(){
+  const j = await fetch('/api/providers-catalog').then(r=>r.json()).catch(()=>({providers:[],icons:{}}));
+  render(j.providers||[], j.icons||{});
+  document.getElementById('authNote').textContent = token
+    ? 'Uploads unlocked · icons stored under /icons/{id}.png'
+    : 'Login with admin password to upload icons.';
+}
+document.getElementById('loginBtn').onclick = async () => {
+  token = document.getElementById('pw').value.trim();
+  sessionStorage.setItem('admin_token', token);
+  const r = await fetch('/api/admin/status', { headers:{ Authorization:'Bearer '+token }});
+  if (!r.ok) { token=''; sessionStorage.removeItem('admin_token'); toast('Bad password', false); return; }
+  document.getElementById('loginBox').style.display='none';
+  toast('Unlocked', true);
+  boot();
+};
+if (!token) document.getElementById('loginBox').style.display='block';
+boot();
+</script>
+</body>
+</html>
