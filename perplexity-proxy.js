@@ -29,10 +29,21 @@ function modelInfo(id) {
 function getCookie() {
   let c = (process.env.PERPLEXITY_COOKIE || process.env.PERPLEXITY_TOKEN || '').trim();
   if (!c) return '';
-  if (!/session-token|=/.test(c) && !c.includes(';')) {
+  // Bare JWT / token value
+  if (!c.includes('=') && !c.includes(';')) {
     c = `__Secure-next-auth.session-token=${c}`;
   }
   return c;
+}
+
+function cookieHasSession(c) {
+  return /(?:^|;\s*)(?:__Secure-)?next-auth\.session-token=/.test(c) ||
+    /session-token=/i.test(c);
+}
+
+function isCloudflareHtml(text) {
+  const s = String(text || '');
+  return /<!DOCTYPE|<html|cf-browser-verification|Just a moment|challenge-platform|cf-challenge/i.test(s);
 }
 
 function lastUserText(messages) {
@@ -104,6 +115,13 @@ async function handle(opts, res) {
     'User-Agent': UA,
     Origin: 'https://www.perplexity.ai',
     Referer: 'https://www.perplexity.ai/',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'sec-ch-ua': '"Chromium";v="130", "Not?A_Brand";v="99"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Linux"',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-origin',
   };
   if (cookie) headers.Cookie = cookie;
 
@@ -162,6 +180,18 @@ async function handle(opts, res) {
     }
   }
 
+  if (!cookieHasSession(cookie)) {
+    const msg =
+      '\n\n[Error: PERPLEXITY_COOKIE is missing __Secure-next-auth.session-token. ' +
+      'document.cookie cannot read it (HttpOnly). Copy it from DevTools → Application → Cookies → perplexity.ai]';
+    if (stream) {
+      sseWrite(res, { id, object: 'chat.completion.chunk', created, model, choices: [{ index: 0, delta: { content: msg }, finish_reason: null }] });
+      sseWrite(res, { id, object: 'chat.completion.chunk', created, model, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] });
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    }
+  }
+
   try {
     const r = await fetch(PPLX_SSE, {
       method: 'POST',
@@ -169,8 +199,14 @@ async function handle(opts, res) {
       body: JSON.stringify(buildBody(query, info.mode, info.pref)),
     });
     if (!r.ok) {
-      const t = await r.text().catch(() => '');
-      throw new Error(`Perplexity ${r.status}: ${t.slice(0, 200)}`);
+      const bodyText = await r.text().catch(() => '');
+      if (r.status === 403 && isCloudflareHtml(bodyText)) {
+        throw new Error(
+          'Perplexity 403 Cloudflare challenge — session cookie missing/expired, or Render IP blocked. ' +
+            'Copy FULL cookies including HttpOnly __Secure-next-auth.session-token from Application → Cookies (not document.cookie).'
+        );
+      }
+      throw new Error(`Perplexity ${r.status}: ${bodyText.slice(0, 200)}`);
     }
 
     let seen = '';

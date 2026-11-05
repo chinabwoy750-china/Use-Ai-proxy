@@ -10,7 +10,7 @@ const ICONS_DIR = path.join(__dirname, 'public', 'icons');
 const PROVIDERS = [
   { id: 'deepseek', name: 'DeepSeek', color: '#4D6BFE', text: 'DS', site: 'https://chat.deepseek.com', models: 'deepseek-chat, deepseek-reasoner', scraper: 'deepseek' },
   { id: 'kimi', name: 'Kimi / Moonshot', color: '#1A1A1A', text: 'Ki', site: 'https://www.kimi.ai', models: 'kimi, kimi-k2', scraper: 'kimi' },
-  { id: 'perplexity', name: 'Perplexity Web', color: '#20808D', text: 'Px', site: 'https://www.perplexity.ai', models: 'pplx-*, perplexity', scraper: 'cookie' },
+  { id: 'perplexity', name: 'Perplexity Web', color: '#20808D', text: 'Px', site: 'https://www.perplexity.ai', models: 'pplx-*, perplexity', scraper: 'perplexity' },
   { id: 'grok', name: 'Grok Web', color: '#1DA1F2', text: 'Gk', site: 'https://grok.com', models: 'grok', scraper: 'cookie' },
   { id: 'uc', name: 'UC / uncensored.com', color: '#7C3AED', text: 'UC', site: 'https://uncensored.com', models: 'uc-*, glm-image', scraper: 'uc' },
   { id: 'mistral', name: 'Mistral / Codestral', color: '#F7D046', text: 'M', site: 'https://console.mistral.ai', models: 'codestral, mistral-*', scraper: 'none' },
@@ -47,6 +47,12 @@ const PROVIDERS = [
 
 /** DevTools console scrapers — copy() so values land on clipboard */
 const SCRAPERS = {
+  perplexity: `(() => {
+  console.log('%cHttpOnly: use Application → Cookies → __Secure-next-auth.session-token', 'color:#e3b341');
+  copy('__Secure-next-auth.session-token=');
+  console.log('Paste the token VALUE after = then put the full string in PERPLEXITY_COOKIE');
+  return document.cookie;
+})()`,
   deepseek: `(() => {
   const token = localStorage.getItem('userToken')
     || localStorage.getItem('token')

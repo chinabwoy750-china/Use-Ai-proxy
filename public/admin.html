@@ -224,6 +224,25 @@ function iconHtml(p){
 }
 
 const CONSOLE_SCRIPTS = {
+  perplexity: `(() => {
+  console.log('%cPerplexity session-token is HttpOnly — document.cookie will NOT include it.', 'color:#e3b341');
+  console.log('1) F12 → Application → Cookies → https://www.perplexity.ai');
+  console.log('2) Copy value of: __Secure-next-auth.session-token');
+  console.log('3) Optionally also copy: __cf_bm, cf_clearance, next-auth.csrf-token');
+  const visible = document.cookie || '';
+  const lines = [
+    'Paste into PERPLEXITY_COOKIE as either:',
+    '__Secure-next-auth.session-token=PASTE_TOKEN_HERE',
+    'or full Cookie header with that pair included.',
+    '',
+    'Visible document.cookie (incomplete):',
+    visible
+  ].join('\n');
+  console.log(lines);
+  copy('__Secure-next-auth.session-token=');
+  console.log('%cClipboard primed with cookie name — paste the VALUE after the = from Application tab', 'color:#20808D');
+  return visible;
+})()`,
   deepseek: `(() => {
   const token = localStorage.getItem('userToken') || localStorage.getItem('token')
     || Object.entries(localStorage).find(([k]) => /token/i.test(k))?.[1] || '';
@@ -285,7 +304,7 @@ const CONSOLE_SCRIPTS = {
 };
 
 const SCRAPER_KIND = {
-  deepseek:'deepseek', kimi:'kimi', uc:'uc', huggingface:'hf', poe:'poe', zai:'zai',
+  deepseek:'deepseek', kimi:'kimi', perplexity:'perplexity', uc:'uc', huggingface:'hf', poe:'poe', zai:'zai',
   promptql:'bearer', twinmind:'bearer', syntx:'bearer',
   mistral:'none', opencode:'none', pollinations:'none', cloudflare:'none', longcat:'none', veo:'none',
 };
