@@ -74,6 +74,13 @@ textarea{min-height:88px;resize:vertical}
 .section-title{font-size:13px;color:var(--muted);margin:16px 0 8px;font-weight:600}
 .icon-btn{width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text);display:grid;place-items:center;cursor:pointer;font-size:16px;padding:0}
 .icon-btn:active{transform:scale(.96)}
+.nav-ico{display:flex;justify-content:center;margin-bottom:2px;color:inherit}
+.nav button.on .nav-ico{color:var(--accent)}
+.model-pick{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px;background:var(--panel2);cursor:pointer}
+.model-pick input{width:auto;accent-color:var(--accent)}
+.model-pick code{font-family:var(--mono);font-size:12px;color:#93c5fd}
+.import-toolbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+
 .icon-actions{display:flex;gap:8px;flex-shrink:0}
 
 </style>
@@ -82,11 +89,28 @@ textarea{min-height:88px;resize:vertical}
 <div id="root"></div>
 <div class="toast" id="toast"></div>
 <nav class="nav" id="nav" style="display:none">
-  <button data-nav="providers" class="on"><span>💬</span>Providers</button>
-  <button data-nav="media"><span>🎬</span>Media</button>
-  <button data-nav="icons"><span>🖼️</span>Icons</button>
+  <button data-nav="providers" class="on"><span class="nav-ico" data-ico="providers"></span>Providers</button>
+  <button data-nav="media"><span class="nav-ico" data-ico="media"></span>Media</button>
+  <button data-nav="icons"><span class="nav-ico" data-ico="icons"></span>Icons</button>
 </nav>
 <script>
+
+/** Premium inline SVG icons (16–20px, currentColor) */
+const ICO = {
+  providers: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>`,
+  media: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3V9z"/></svg>`,
+  icons: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`,
+  copy: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>`,
+  import: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M4 19h16"/></svg>`,
+  back: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>`,
+  plus: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>`,
+  close: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>`,
+  check: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`,
+  key: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>`,
+  refresh: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-2.1-5.7"/><path d="M21 3v6h-6"/></svg>`,
+  trash: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2m-1 0v14a2 2 0 01-2 2H9a2 2 0 01-2-2V6"/></svg>`,
+};
+
 const THINKING = ['Auto','Low','Medium','High'];
 const SCRIPTS = {
   deepseek: `(()=>{const token=localStorage.getItem('userToken')||localStorage.getItem('token')||Object.entries(localStorage).find(([k])=>/token/i.test(k))?.[1]||'';const out={DEEPSEEK_URL:location.origin,DEEPSEEK_TOKEN:String(token||'').replace(/^Bearer\\s+/i,''),DEEPSEEK_COOKIE:document.cookie||''};console.log(out);copy(JSON.stringify(out,null,2));console.log('%cCopied for myproxy-use — paste into admin Session values','color:#4D6BFE');return out})()`,
@@ -275,17 +299,17 @@ function renderDetail(){
   const models=enabledModels(p);
   const connBlock=accounts.length?accounts.map((a,i)=>`<div class="conn"><div><div style="font-weight:600;font-size:13px">${a.name||('Key '+(i+1))}</div><code>${String(a.key||'').slice(0,8)}…</code></div>
     <button class="btn ghost" data-del-acc="${i}" style="padding:6px 10px">Remove</button></div>`).join('')
-    :`<div class="empty">No connections yet</div>`;
+    :`<div class="empty"><div style="display:flex;justify-content:center;margin-bottom:8px;color:var(--muted)">${ICO.key}</div>No connections yet</div>`;
   const modelBlock=models.map(m=>`<div class="model-chip"><span>${m}</span><button class="btn ghost" data-rm-model="${m}" style="padding:4px 8px">✕</button></div>`).join('');
   const suggested=(p.suggested||p.models||[]).filter(m=>!models.includes(m)).map(m=>`<button data-add-sug="${m}"><span>+</span> ${m}</button>`).join('');
 
   document.getElementById('root').innerHTML=`<div class="wrap">
-    <button class="back" id="back">← Back</button>
+    <button class="back" id="back">${ICO.back} Back</button>
     <div class="hdr"><div class="icon" style="background:${p.color||'#333'}">${icon(p)}</div>
       <div style="flex:1"><h1>${p.name}</h1><div class="sub">${accounts.length} connections · ${p.kind||'chat'}</div></div>
       <div class="icon-actions">
-        <button class="icon-btn" id="btnCopyConsole" title="Copy DevTools console script">📋</button>
-        <button class="icon-btn" id="btnImportModels" title="Import models">📥</button>
+        <button class="icon-btn" id="btnCopyConsole" title="Copy DevTools console script">${ICO.copy}</button>
+        <button class="icon-btn" id="btnImportModels" title="Import models from /v1/models">${ICO.import}</button>
       </div>
     </div>
     <div class="info">${p.blurb||''}${p.site?`<div style="margin-top:8px"><a href="${p.site}" target="_blank" rel="noopener">${p.site}</a></div>`:''}</div>
@@ -294,21 +318,21 @@ function renderDetail(){
         <div class="row"><span class="muted" style="font-size:12px">Round Robin</span>
         <button class="switch ${rr?'on':''}" id="rr" type="button"><i></i></button></div></div>
       ${connBlock}
-      <button class="btn primary" id="addConn" style="margin-top:8px">+ Add Connection</button>
+      <button class="btn primary" id="addConn" style="margin-top:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px">${ICO.plus} Add Connection</button>
     </div>
     ${p.auth==='session'?`<div class="card"><h2>Session values</h2>
       ${(p.fields||[]).map(f=>`<div style="margin-bottom:10px"><label class="lbl">${f.label} · ${f.key}</label>
       ${f.area?`<textarea data-f="${f.key}" placeholder="${statusMap[f.key]?.preview||''}"></textarea>`:`<input data-f="${f.key}" type="password" placeholder="${statusMap[f.key]?.preview||''}"/>`}
       </div>`).join('')}
       <button class="btn blue block" id="saveSession">Save values</button>
-      <button class="btn ghost block" id="btnCopyConsole2" style="margin-top:8px">📋 Copy console JS (credentials)</button>
+      <button class="btn ghost block" id="btnCopyConsole2" style="margin-top:8px;display:inline-flex;align-items:center;justify-content:center;gap:8px">${ICO.copy} Copy console JS</button>
     </div>`:''}
     <div class="card rel">
       <div class="row" style="margin-bottom:10px"><h2 style="margin:0">Available Models</h2>
         <button class="btn ghost" id="thinkBtn" style="padding:6px 10px">Thinking: ${thinking}</button></div>
       ${thinkOpen?`<div class="think-menu">${THINKING.map(t=>`<button data-think="${t}">Thinking: ${t}</button>`).join('')}</div>`:''}
       ${modelBlock||'<div class="muted">No models</div>'}
-      <button class="btn ghost block" id="addModel" style="border-style:dashed;margin-top:8px">+ Add Model</button>
+      <button class="btn ghost block" id="addModel" style="border-style:dashed;margin-top:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px">${ICO.plus} Add Model</button>
       <p class="muted" style="margin:12px 0 6px;font-size:12px">Suggested</p>
       <div class="suggest">${suggested||'<span class="muted">—</span>'}</div>
     </div>
@@ -365,23 +389,68 @@ function renderDetail(){
   if (b1) b1.onclick = copyConsole;
   const b2 = document.getElementById('btnCopyConsole2');
   if (b2) b2.onclick = copyConsole;
+  async function loadEndpointModels() {
+    importModelsState = { loading: true, error: '', items: [], selected: new Set() };
+    importModelsOpen = true;
+    render();
+    try {
+      const j = await fetch('/v1/models').then(r => r.json());
+      const data = Array.isArray(j.data) ? j.data : (Array.isArray(j) ? j : []);
+      const id = p.id.toLowerCase();
+      const prefixes = [id, ...(p.models || []).map(m => String(m).split(/[\/-]/)[0].toLowerCase())];
+      const match = (mid) => {
+        const m = String(mid || '').toLowerCase();
+        if (m === id || m.startsWith(id + '-') || m.startsWith(id + '/') || m.startsWith(id + '_')) return true;
+        return (p.models || []).some(x => m === String(x).toLowerCase() || m.startsWith(String(x).toLowerCase()));
+      };
+      let items = data.filter(x => match(x.id || x));
+      // If nothing matched, show all so user can still pick
+      if (!items.length) items = data;
+      const already = new Set(enabledModels(p));
+      importModelsState = {
+        loading: false,
+        error: '',
+        items,
+        selected: new Set(items.map(x => x.id || x).filter(id => !already.has(id)).slice(0, 0)), // none preselected
+      };
+    } catch (e) {
+      importModelsState = { loading: false, error: e.message || String(e), items: [], selected: new Set() };
+    }
+    render();
+  }
   const bi = document.getElementById('btnImportModels');
-  if (bi) bi.onclick = () => { importModelsOpen = true; render(); };
+  if (bi) bi.onclick = () => loadEndpointModels();
   if (importModelsOpen) {
     const close = () => { importModelsOpen = false; render(); };
     const imx = document.getElementById('imx');
     if (imx) imx.onclick = close;
     const imbg = document.getElementById('imbg');
     if (imbg) imbg.onclick = (e) => { if (e.target.id === 'imbg') close(); };
+    const imrefresh = document.getElementById('imrefresh');
+    if (imrefresh) imrefresh.onclick = () => loadEndpointModels();
+    const imall = document.getElementById('imall');
+    if (imall) imall.onclick = () => {
+      importModelsState.selected = new Set((importModelsState.items || []).map(x => x.id || x));
+      render();
+    };
+    const imnone = document.getElementById('imnone');
+    if (imnone) imnone.onclick = () => { importModelsState.selected = new Set(); render(); };
+    document.querySelectorAll('[data-mid]').forEach(cb => {
+      cb.onchange = () => {
+        const id = cb.getAttribute('data-mid');
+        if (cb.checked) importModelsState.selected.add(id);
+        else importModelsState.selected.delete(id);
+      };
+    });
     const imsave = document.getElementById('imsave');
     if (imsave) imsave.onclick = async () => {
-      const lines = (document.getElementById('imlist').value || '').split('\n').map(s => s.trim()).filter(Boolean);
-      if (!lines.length) return toast('No models', false);
+      const lines = Array.from(importModelsState.selected || []);
+      if (!lines.length) return toast('Select at least one model', false);
       const custom = Array.from(new Set([...((connMap[p.id] || {}).customModels || []), ...lines]));
       const enabled = Array.from(new Set([...enabledModels(p), ...lines]));
       await saveConn(p.id, { customModels: custom, enabledModels: enabled, accounts: parseAccounts(p) });
       importModelsOpen = false;
-      toast('Imported ' + lines.length + ' model(s)', true);
+      toast('Imported ' + lines.length + ' model(s) from /v1/models', true);
       render();
     };
   }
@@ -390,12 +459,26 @@ function renderDetail(){
 }
 
 function renderImportModels(p){
+  const loading = importModelsState.loading;
+  const err = importModelsState.error;
+  const items = importModelsState.items || [];
+  const selected = importModelsState.selected || new Set();
+  const rows = items.map(m => {
+    const id = m.id || m;
+    const on = selected.has(id);
+    return `<label class="model-pick"><input type="checkbox" data-mid="${id}" ${on?'checked':''}/><code>${id}</code></label>`;
+  }).join('');
   return `<div class="modal-bg" id="imbg"><div class="modal">
-    <button class="x" id="imx">×</button>
+    <button class="x" id="imx">${ICO.close}</button>
     <h3>Import models · ${p.name}</h3>
-    <p class="muted" style="font-size:12px;margin-top:0">One model id per line. They are added to this provider's Available Models list.</p>
-    <textarea id="imlist" placeholder="model-a&#10;model-b&#10;org/model-c"></textarea>
-    <button class="btn primary" id="imsave" style="margin-top:12px">Import models</button>
+    <p class="muted" style="font-size:12px;margin-top:0">Loaded from this proxy <code>/v1/models</code>, filtered for <b>${p.id}</b>.</p>
+    <div class="import-toolbar">
+      <button class="btn ghost" id="imrefresh" style="display:inline-flex;align-items:center;gap:6px">${ICO.refresh} Refresh</button>
+      <button class="btn ghost" id="imall">Select all</button>
+      <button class="btn ghost" id="imnone">Clear</button>
+    </div>
+    <div id="imlistbox" style="max-height:42vh;overflow:auto">${loading ? '<div class="muted">Loading models…</div>' : (err ? '<div class="muted" style="color:#fca5a5">'+err+'</div>' : (rows || '<div class="muted">No matching models on /v1/models</div>'))}</div>
+    <button class="btn primary" id="imsave" style="margin-top:12px;display:inline-flex;align-items:center;justify-content:center;gap:6px" ${!items.length?'disabled':''}>${ICO.check} Import selected</button>
   </div></div>`;
 }
 function renderModal(p){
@@ -437,7 +520,15 @@ function wireModal(p,accounts){
   };
 }
 
+function paintNavIcons(){
+  document.querySelectorAll('[data-ico]').forEach(el => {
+    const k = el.getAttribute('data-ico');
+    if (ICO[k]) el.innerHTML = ICO[k];
+  });
+}
 function wireNav(){
+  paintNavIcons();
+
   document.querySelectorAll('#nav [data-nav]').forEach(b=>{
     b.onclick=()=>{
       view.tab=b.getAttribute('data-nav');
