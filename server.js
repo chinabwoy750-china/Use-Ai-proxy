@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config-store');
 const catalog = require('./providers-catalog');
+const connections = require('./connection-store');
 
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err && err.message ? err.message : err);
@@ -285,6 +286,105 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { 'Content-Type': types[ext] || 'application/octet-stream', 'Cache-Control': 'public, max-age=3600' });
       return res.end(fs.readFileSync(file));
     }
+
+    
+    if (pathname === '/api/browser-login/status' && req.method === 'GET') {
+      const worker = !!(process.env.BROWSER_WORKER_URL || process.env.CHROME_PATH || process.env.PLAYWRIGHT_CHROMIUM);
+      return sendJson(res, 200, {
+        available: worker,
+        mode: process.env.BROWSER_WORKER_URL ? 'worker' : (process.env.CHROME_PATH ? 'local-chrome' : 'none'),
+        message: worker
+          ? 'Browser login can be attempted on this host'
+          : 'No browser on this host. Set BROWSER_WORKER_URL or run with Chromium. On Render free use manual credentials + console JS.',
+      });
+    }
+
+    if (pathname === '/api/browser-login/start' && req.method === 'POST') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason });
+      const raw = await readBody(req);
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch {}
+      const worker = process.env.BROWSER_WORKER_URL;
+      if (!worker) {
+        return sendJson(res, 501, {
+          ok: false,
+          error:
+            'Browser login is not available on this deploy (no BROWSER_WORKER_URL / Chromium). Open the provider site, log in, then use Copy console JS or Application → Cookies and paste under Credentials.',
+        });
+      }
+      try {
+        const r = await fetch(String(worker).replace(/\/$/, '') + '/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + (process.env.BROWSER_WORKER_KEY || ''),
+          },
+          body: JSON.stringify({ provider: body.provider }),
+        });
+        const j = await r.json().catch(() => ({}));
+        return sendJson(res, r.status, j);
+      } catch (e) {
+        return sendJson(res, 502, { ok: false, error: e.message || String(e) });
+      }
+    }
+
+    if (pathname === '/api/admin/connections' && req.method === 'GET') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason });
+      return sendJson(res, 200, connections.readConnections());
+    }
+
+    if (pathname === '/api/admin/connections' && req.method === 'POST') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason });
+      const raw = await readBody(req);
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { return sendJson(res, 400, { error: 'bad json' }); }
+      if (!body.id) return sendJson(res, 400, { error: 'id required' });
+      connections.setConnection(body.id, body);
+      // persist full blob via config save
+      await config.saveFromAdmin({ PROVIDER_CONNECTIONS: process.env.PROVIDER_CONNECTIONS || '{}' });
+      return sendJson(res, 200, connections.readConnections());
+    }
+
+    if (pathname === '/api/admin/test' && req.method === 'POST') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason });
+      const raw = await readBody(req);
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { return sendJson(res, 400, { error: 'bad json' }); }
+      const model = body.model || body.provider || 'pollinations';
+      try {
+        const r = await fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            stream: false,
+            messages: [{ role: 'user', content: 'Reply with exactly: pong' }],
+            max_tokens: 16,
+          }),
+        });
+        const text = await r.text();
+        let j = null;
+        try { j = JSON.parse(text); } catch {}
+        const content =
+          j?.choices?.[0]?.message?.content ||
+          j?.choices?.[0]?.delta?.content ||
+          text.slice(0, 300);
+        return sendJson(res, 200, {
+          ok: r.ok,
+          status: r.status,
+          model,
+          content: String(content).slice(0, 500),
+          error: r.ok ? null : (j?.error?.message || text.slice(0, 200)),
+        });
+      } catch (e) {
+        return sendJson(res, 200, { ok: false, error: e.message || String(e) });
+      }
+    }
+
 
     if (pathname === '/health' || pathname === '/') {
       return sendJson(res, 200, {

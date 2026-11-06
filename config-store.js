@@ -72,12 +72,13 @@ const KEYS = [
   'TWINMIND_JWT',
   'SYNTX_TOKEN',
   'SYNTX_JWT',
+  'PROVIDER_CONNECTIONS',
 ];
 
 const SENSITIVE = new Set(
   KEYS.filter(
     (k) =>
-      /TOKEN|COOKIE|PASSWORD|KEY|ACCOUNTS/i.test(k) &&
+      /TOKEN|COOKIE|PASSWORD|KEY|ACCOUNTS|CONNECTIONS/i.test(k) &&
       k !== 'OPENCODE_ENABLED' &&
       k !== 'VEO_ENABLED'
   )
