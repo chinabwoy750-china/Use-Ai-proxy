@@ -8,6 +8,7 @@ const path = require('path');
 const ICONS_DIR = path.join(__dirname, 'public', 'icons');
 
 const PROVIDERS = [
+  { id: 'openrouter', name: 'OpenRouter', color: '#6566F1', text: 'OR', site: 'https://openrouter.ai', models: 'openrouter/*, free models', scraper: 'none' },
   { id: 'deepseek', name: 'DeepSeek', color: '#4D6BFE', text: 'DS', site: 'https://chat.deepseek.com', models: 'deepseek-chat, deepseek-reasoner', scraper: 'deepseek' },
   { id: 'kimi', name: 'Kimi / Moonshot', color: '#1A1A1A', text: 'Ki', site: 'https://www.kimi.ai', models: 'kimi, kimi-k2', scraper: 'kimi' },
   { id: 'perplexity', name: 'Perplexity Web', color: '#20808D', text: 'Px', site: 'https://www.perplexity.ai', models: 'pplx-*, perplexity', scraper: 'perplexity' },

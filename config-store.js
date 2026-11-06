@@ -72,6 +72,10 @@ const KEYS = [
   'TWINMIND_JWT',
   'SYNTX_TOKEN',
   'SYNTX_JWT',
+  'OPENROUTER_API_KEY',
+  'OPENROUTER_API_KEYS',
+  'OPENROUTER_KEY',
+  'OPENROUTER_ROUND_ROBIN',
   'PROVIDER_CONNECTIONS',
 ];
 
@@ -268,6 +272,7 @@ function getPublicProviders() {
     conol: !!process.env.CONOL_COOKIE,
     twinmind: !!(process.env.TWINMIND_TOKEN || process.env.TWINMIND_JWT),
     syntx: !!(process.env.SYNTX_TOKEN || process.env.SYNTX_JWT),
+    openrouter: !!(process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEYS || process.env.OPENROUTER_KEY),
     redis: redisConfigured(),
   };
 }
