@@ -247,6 +247,19 @@ const server = http.createServer(async (req, res) => {
       return res.end(fs.readFileSync(html));
     }
 
+    
+    if (pathname === '/api/icons/library' && req.method === 'GET') {
+      const icons = catalog.resolveIcons();
+      const meta = typeof catalog.iconLibraryMeta === 'function' ? catalog.iconLibraryMeta() : {};
+      return sendJson(res, 200, { ok: true, meta, icons, count: Object.keys(icons).length });
+    }
+
+    if (pathname.startsWith('/api/icons/candidates/') && req.method === 'GET') {
+      const id = pathname.split('/').pop();
+      const list = catalog.iconCandidatesFor ? catalog.iconCandidatesFor(id) : [];
+      return sendJson(res, 200, { id, candidates: list });
+    }
+
     if (pathname === '/api/providers-catalog' && req.method === 'GET') {
       return sendJson(res, 200, {
         providers: catalog.PROVIDERS,

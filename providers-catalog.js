@@ -4,6 +4,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const iconLib = require('./icon-library');
 
 const ICONS_DIR = path.join(__dirname, 'public', 'icons');
 
@@ -218,7 +219,14 @@ function saveIconLink(id, url) {
 function resolveIcons() {
   const files = listIconFiles();
   const links = listIconLinks();
-  return { ...links, ...files }; // uploaded file wins over link
+  const library = iconLib.buildLibraryIcons(PROVIDERS);
+  // priority: uploaded file > manual link > CDN library
+  return { ...library, ...links, ...files };
+}
+
+function iconCandidatesFor(id) {
+  const p = PROVIDERS.find((x) => x.id === id) || {};
+  return iconLib.iconCandidates(id, { site: p.site });
 }
 
 function listIconFiles() {
@@ -266,6 +274,8 @@ module.exports = {
   listIconLinks,
   saveIconLink,
   resolveIcons,
+  iconCandidatesFor,
+  iconLibraryMeta: iconLib.libraryMeta,
   saveIcon,
   ICONS_DIR,
 };
