@@ -375,7 +375,7 @@ function renderDetail(){
     if (imbg) imbg.onclick = (e) => { if (e.target.id === 'imbg') close(); };
     const imsave = document.getElementById('imsave');
     if (imsave) imsave.onclick = async () => {
-      const lines = (document.getElementById('imlist').value || '').split('\\n').map(s => s.trim()).filter(Boolean);
+      const lines = (document.getElementById('imlist').value || '').split('\n').map(s => s.trim()).filter(Boolean);
       if (!lines.length) return toast('No models', false);
       const custom = Array.from(new Set([...((connMap[p.id] || {}).customModels || []), ...lines]));
       const enabled = Array.from(new Set([...enabledModels(p), ...lines]));
