@@ -72,6 +72,10 @@ textarea{min-height:88px;resize:vertical}
 .icon-card .box{width:64px;height:64px;margin:0 auto 8px;border-radius:14px;overflow:hidden;display:grid;place-items:center;background:#12161c;border:1px solid var(--line)}
 .icon-card .box img{width:100%;height:100%;object-fit:cover}
 .section-title{font-size:13px;color:var(--muted);margin:16px 0 8px;font-weight:600}
+.icon-btn{width:40px;height:40px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--text);display:grid;place-items:center;cursor:pointer;font-size:16px;padding:0}
+.icon-btn:active{transform:scale(.96)}
+.icon-actions{display:flex;gap:8px;flex-shrink:0}
+
 </style>
 </head>
 <body>
@@ -84,11 +88,38 @@ textarea{min-height:88px;resize:vertical}
 </nav>
 <script>
 const THINKING = ['Auto','Low','Medium','High'];
+const SCRIPTS = {
+  deepseek: `(()=>{const token=localStorage.getItem('userToken')||localStorage.getItem('token')||Object.entries(localStorage).find(([k])=>/token/i.test(k))?.[1]||'';const out={DEEPSEEK_URL:location.origin,DEEPSEEK_TOKEN:String(token||'').replace(/^Bearer\\s+/i,''),DEEPSEEK_COOKIE:document.cookie||''};console.log(out);copy(JSON.stringify(out,null,2));console.log('%cCopied for myproxy-use — paste into admin Session values','color:#4D6BFE');return out})()`,
+  kimi: `(()=>{let a='',r='';for(const s of[localStorage,sessionStorage]){for(const k of Object.keys(s)){const v=s.getItem(k)||'';if(/access/i.test(k)&&v.startsWith('eyJ'))a=v;if(/refresh/i.test(k)&&v.startsWith('eyJ'))r=v}}const out={KIMI_URL:location.href.includes('kimi.ai')?'https://www.kimi.ai':'https://www.kimi.com',KIMI_TOKEN:a,KIMI_REFRESH_TOKEN:r};copy(JSON.stringify(out,null,2));console.log(out);console.log('%cCopied for myproxy-use','color:#56d364');return out})()`,
+  perplexity: `(()=>{console.log('%cHttpOnly session-token: Application → Cookies → __Secure-next-auth.session-token','color:#eab308');copy('__Secure-next-auth.session-token=');console.log('Paste VALUE after = then put full string in PERPLEXITY_COOKIE')})()`,
+  uc: `(()=>{copy(document.cookie||'');console.log('%cCopied document.cookie — also copy HttpOnly __client from Application → Cookies for UC','color:#7C3AED')})()`,
+  hf: `(()=>{const h=(document.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('hf-chat='));const v=h?h.split('=').slice(1).join('='):'';copy(v||document.cookie);console.log({HF_CHAT_COOKIE:v})})()`,
+  poe: `(()=>{const p=(document.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('p-b='));copy(p||document.cookie)})()`,
+  zai: `(()=>{let t=localStorage.getItem('token')||'';for(const k of Object.keys(localStorage)){const v=localStorage.getItem(k)||'';if(!t&&/token/i.test(k))t=v}const out={ZAI_TOKEN:t,ZAI_COOKIE:document.cookie||''};copy(JSON.stringify(out,null,2));console.log(out)})()`,
+  bearer: `(()=>{const f=Object.entries(localStorage).find(([,v])=>String(v).startsWith('eyJ'));if(f){copy(String(f[1]).replace(/^Bearer\\s+/i,''));console.log('Copied JWT from',f[0])}else console.log('Copy Authorization Bearer from Network tab')})()`,
+  cookie: `(()=>{copy(document.cookie||'');console.log('%cCopied document.cookie (HttpOnly cookies missing)','color:#e3b341')})()`,
+  none: `(()=>{console.log('This provider uses an API key from its dashboard — paste into Add Connection.')})()`,
+};
+const SCRAPER_KIND = {
+  deepseek:'deepseek', kimi:'kimi', perplexity:'perplexity', uc:'uc', huggingface:'hf', poe:'poe', zai:'zai',
+  promptql:'bearer', twinmind:'bearer', syntx:'bearer',
+  mistral:'none', opencode:'none', pollinations:'none', cloudflare:'none', longcat:'none', veo:'none',
+};
+function consoleScriptFor(id){
+  return SCRIPTS[SCRAPER_KIND[id]||'cookie'] || SCRIPTS.cookie;
+}
+async function copyText(text){
+  try{await navigator.clipboard.writeText(text);return true}catch{
+    const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy')}catch{} ta.remove(); return true;
+  }
+}
+
 let PROVIDERS = [];
 let token = sessionStorage.getItem('admin_token') || '';
 let statusMap = {}, iconsMap = {}, connMap = {};
 let view = { tab: 'providers', page: 'list', id: null };
-let modal = null, bulkMode = false, thinkOpen = false, filter = '';
+let modal = null, bulkMode = false, thinkOpen = false, filter = '', importModelsOpen = false;
 
 function toast(msg, ok){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3200)}
 async function api(path, opts={}){
@@ -251,7 +282,12 @@ function renderDetail(){
   document.getElementById('root').innerHTML=`<div class="wrap">
     <button class="back" id="back">← Back</button>
     <div class="hdr"><div class="icon" style="background:${p.color||'#333'}">${icon(p)}</div>
-      <div style="flex:1"><h1>${p.name}</h1><div class="sub">${accounts.length} connections · ${p.kind||'chat'}</div></div></div>
+      <div style="flex:1"><h1>${p.name}</h1><div class="sub">${accounts.length} connections · ${p.kind||'chat'}</div></div>
+      <div class="icon-actions">
+        <button class="icon-btn" id="btnCopyConsole" title="Copy DevTools console script">📋</button>
+        <button class="icon-btn" id="btnImportModels" title="Import models">📥</button>
+      </div>
+    </div>
     <div class="info">${p.blurb||''}${p.site?`<div style="margin-top:8px"><a href="${p.site}" target="_blank" rel="noopener">${p.site}</a></div>`:''}</div>
     <div class="card">
       <div class="row" style="margin-bottom:12px"><h2 style="margin:0">Connections</h2>
@@ -265,6 +301,7 @@ function renderDetail(){
       ${f.area?`<textarea data-f="${f.key}" placeholder="${statusMap[f.key]?.preview||''}"></textarea>`:`<input data-f="${f.key}" type="password" placeholder="${statusMap[f.key]?.preview||''}"/>`}
       </div>`).join('')}
       <button class="btn blue block" id="saveSession">Save values</button>
+      <button class="btn ghost block" id="btnCopyConsole2" style="margin-top:8px">📋 Copy console JS (credentials)</button>
     </div>`:''}
     <div class="card rel">
       <div class="row" style="margin-bottom:10px"><h2 style="margin:0">Available Models</h2>
@@ -277,7 +314,7 @@ function renderDetail(){
     </div>
     <div class="card"><h2>Test</h2><button class="btn blue block" id="test">Test connection</button>
       <pre id="testOut" class="muted" style="white-space:pre-wrap;font-family:var(--mono);font-size:11px;margin-top:10px"></pre></div>
-  </div>${modal?renderModal(p):''}`;
+  </div>${modal?renderModal(p):''}${importModelsOpen?renderImportModels(p):''}`;
 
   document.getElementById('back').onclick=()=>{view.page='list';render()};
   document.getElementById('rr').onclick=async()=>{await saveConn(p.id,{roundRobin:!rr,accounts:parseAccounts(p)});toast('Round robin updated',true);render()};
@@ -317,9 +354,50 @@ function renderDetail(){
     statusMap=await api('/api/admin/config',{method:'POST',body:JSON.stringify(body)});
     toast('Saved',true);render();
   };
+
+  const copyConsole = async () => {
+    const site = p.site || 'the provider site';
+    const script = `// ${p.name} · open ${site} while logged in → F12 Console → paste → Enter\n` + consoleScriptFor(p.id);
+    await copyText(script);
+    toast('Console JS copied — open site → F12 → paste → Enter', true);
+  };
+  const b1 = document.getElementById('btnCopyConsole');
+  if (b1) b1.onclick = copyConsole;
+  const b2 = document.getElementById('btnCopyConsole2');
+  if (b2) b2.onclick = copyConsole;
+  const bi = document.getElementById('btnImportModels');
+  if (bi) bi.onclick = () => { importModelsOpen = true; render(); };
+  if (importModelsOpen) {
+    const close = () => { importModelsOpen = false; render(); };
+    const imx = document.getElementById('imx');
+    if (imx) imx.onclick = close;
+    const imbg = document.getElementById('imbg');
+    if (imbg) imbg.onclick = (e) => { if (e.target.id === 'imbg') close(); };
+    const imsave = document.getElementById('imsave');
+    if (imsave) imsave.onclick = async () => {
+      const lines = (document.getElementById('imlist').value || '').split('\\n').map(s => s.trim()).filter(Boolean);
+      if (!lines.length) return toast('No models', false);
+      const custom = Array.from(new Set([...((connMap[p.id] || {}).customModels || []), ...lines]));
+      const enabled = Array.from(new Set([...enabledModels(p), ...lines]));
+      await saveConn(p.id, { customModels: custom, enabledModels: enabled, accounts: parseAccounts(p) });
+      importModelsOpen = false;
+      toast('Imported ' + lines.length + ' model(s)', true);
+      render();
+    };
+  }
+
   if(modal) wireModal(p, parseAccounts(p));
 }
 
+function renderImportModels(p){
+  return `<div class="modal-bg" id="imbg"><div class="modal">
+    <button class="x" id="imx">×</button>
+    <h3>Import models · ${p.name}</h3>
+    <p class="muted" style="font-size:12px;margin-top:0">One model id per line. They are added to this provider's Available Models list.</p>
+    <textarea id="imlist" placeholder="model-a&#10;model-b&#10;org/model-c"></textarea>
+    <button class="btn primary" id="imsave" style="margin-top:12px">Import models</button>
+  </div></div>`;
+}
 function renderModal(p){
   return `<div class="modal-bg" id="mbg"><div class="modal">
     <button class="x" id="mx">×</button>
