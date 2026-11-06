@@ -191,6 +191,36 @@ function scraperFor(provider) {
   return SCRAPERS[kind] || SCRAPERS.cookie;
 }
 
+
+const ICON_LINKS_PATH = path.join(ICONS_DIR, 'links.json');
+
+function listIconLinks() {
+  try {
+    if (!fs.existsSync(ICON_LINKS_PATH)) return {};
+    const j = JSON.parse(fs.readFileSync(ICON_LINKS_PATH, 'utf8'));
+    return j && typeof j === 'object' ? j : {};
+  } catch { return {}; }
+}
+
+function saveIconLink(id, url) {
+  const safe = String(id || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  if (!safe) throw new Error('bad id');
+  const u = String(url || '').trim();
+  if (!u) throw new Error('url required');
+  if (!/^https?:\/\//i.test(u)) throw new Error('url must start with http(s)://');
+  if (!fs.existsSync(ICONS_DIR)) fs.mkdirSync(ICONS_DIR, { recursive: true });
+  const all = listIconLinks();
+  all[safe] = u;
+  fs.writeFileSync(ICON_LINKS_PATH, JSON.stringify(all, null, 2));
+  return u;
+}
+
+function resolveIcons() {
+  const files = listIconFiles();
+  const links = listIconLinks();
+  return { ...links, ...files }; // uploaded file wins over link
+}
+
 function listIconFiles() {
   const out = {};
   try {
@@ -233,6 +263,9 @@ module.exports = {
   SCRAPERS,
   scraperFor,
   listIconFiles,
+  listIconLinks,
+  saveIconLink,
+  resolveIcons,
   saveIcon,
   ICONS_DIR,
 };

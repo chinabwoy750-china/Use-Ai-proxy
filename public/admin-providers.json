@@ -1,0 +1,995 @@
+[
+  {
+    "id": "deepseek",
+    "name": "DeepSeek",
+    "color": "#4D6BFE",
+    "text": "DS",
+    "site": "https://chat.deepseek.com",
+    "models": [
+      "deepseek-chat",
+      "deepseek-reasoner"
+    ],
+    "scraper": "deepseek",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "DEEPSEEK_TOKEN",
+        "label": "Token"
+      },
+      {
+        "key": "DEEPSEEK_COOKIE",
+        "label": "Cookie",
+        "area": true
+      },
+      {
+        "key": "DEEPSEEK_URL",
+        "label": "URL"
+      }
+    ],
+    "modelsArr": [
+      "deepseek-chat",
+      "deepseek-reasoner"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://chat.deepseek.com",
+    "suggested": [
+      "deepseek-chat",
+      "deepseek-reasoner"
+    ]
+  },
+  {
+    "id": "kimi",
+    "name": "Kimi / Moonshot",
+    "color": "#1A1A1A",
+    "text": "Ki",
+    "site": "https://www.kimi.ai",
+    "models": [
+      "kimi",
+      "kimi-k2"
+    ],
+    "scraper": "kimi",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "KIMI_TOKEN",
+        "label": "Access token",
+        "area": true
+      },
+      {
+        "key": "KIMI_REFRESH_TOKEN",
+        "label": "Refresh token",
+        "area": true
+      },
+      {
+        "key": "KIMI_URL",
+        "label": "URL"
+      }
+    ],
+    "modelsArr": [
+      "kimi",
+      "kimi-k2"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://www.kimi.ai",
+    "suggested": [
+      "kimi",
+      "kimi-k2"
+    ]
+  },
+  {
+    "id": "perplexity",
+    "name": "Perplexity Web",
+    "color": "#20808D",
+    "text": "Px",
+    "site": "https://www.perplexity.ai",
+    "models": [
+      "perplexity",
+      "pplx-auto"
+    ],
+    "scraper": "perplexity",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "PERPLEXITY_COOKIE",
+        "label": "Session cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "perplexity",
+      "pplx-auto"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://www.perplexity.ai",
+    "suggested": [
+      "perplexity",
+      "pplx-auto"
+    ]
+  },
+  {
+    "id": "grok",
+    "name": "Grok Web",
+    "color": "#1DA1F2",
+    "text": "Gk",
+    "site": "https://grok.com",
+    "models": [
+      "grok"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "GROK_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "grok"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://grok.com",
+    "suggested": [
+      "grok"
+    ]
+  },
+  {
+    "id": "uc",
+    "name": "UC / uncensored.com",
+    "color": "#7C3AED",
+    "text": "UC",
+    "site": "https://uncensored.com",
+    "models": [
+      "uc",
+      "glm-image"
+    ],
+    "scraper": "uc",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "UC_COOKIE",
+        "label": "Cookie (__client)",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "uc",
+      "glm-image"
+    ],
+    "kind": "media",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://uncensored.com",
+    "suggested": [
+      "uc",
+      "glm-image"
+    ]
+  },
+  {
+    "id": "mistral",
+    "name": "Mistral / Codestral",
+    "color": "#F7D046",
+    "text": "M",
+    "site": "https://console.mistral.ai",
+    "models": [
+      "codestral",
+      "mistral-small"
+    ],
+    "scraper": "none",
+    "auth": "apikey",
+    "envKey": "MISTRAL_API_KEYS",
+    "modelsArr": [
+      "codestral",
+      "mistral-small"
+    ],
+    "kind": "chat",
+    "blurb": "API key provider",
+    "keyUrl": "https://console.mistral.ai",
+    "suggested": [
+      "codestral",
+      "mistral-small"
+    ]
+  },
+  {
+    "id": "huggingface",
+    "name": "Hugging Face",
+    "color": "#FFD21E",
+    "text": "HF",
+    "site": "https://huggingface.co/chat",
+    "models": [
+      "hf"
+    ],
+    "scraper": "hf",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "HF_CHAT_COOKIE",
+        "label": "hf-chat"
+      }
+    ],
+    "modelsArr": [
+      "hf"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://huggingface.co/chat",
+    "suggested": [
+      "hf"
+    ]
+  },
+  {
+    "id": "opencode",
+    "name": "OpenCode Free",
+    "color": "#E87040",
+    "text": "OC",
+    "site": "https://opencode.ai",
+    "models": [
+      "opencode"
+    ],
+    "scraper": "none",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "OPENCODE_ENABLED",
+        "label": "Enabled 1/0"
+      }
+    ],
+    "modelsArr": [
+      "opencode"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://opencode.ai",
+    "suggested": [
+      "opencode"
+    ]
+  },
+  {
+    "id": "notrack",
+    "name": "NoTrack Web",
+    "color": "#22C55E",
+    "text": "NT",
+    "site": "https://notrack.ai",
+    "models": [
+      "notrack"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "NOTRACK_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "notrack"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://notrack.ai",
+    "suggested": [
+      "notrack"
+    ]
+  },
+  {
+    "id": "t3",
+    "name": "t3.chat",
+    "color": "#A78BFA",
+    "text": "T3",
+    "site": "https://t3.chat",
+    "models": [
+      "t3"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "T3_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "t3"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://t3.chat",
+    "suggested": [
+      "t3"
+    ]
+  },
+  {
+    "id": "venice",
+    "name": "Venice Web",
+    "color": "#0EA5E9",
+    "text": "V",
+    "site": "https://venice.ai",
+    "models": [
+      "venice"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "VENICE_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "venice"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://venice.ai",
+    "suggested": [
+      "venice"
+    ]
+  },
+  {
+    "id": "poe",
+    "name": "Poe Web",
+    "color": "#5B21B6",
+    "text": "Poe",
+    "site": "https://poe.com",
+    "models": [
+      "poe"
+    ],
+    "scraper": "poe",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "POE_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "poe"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://poe.com",
+    "suggested": [
+      "poe"
+    ]
+  },
+  {
+    "id": "arena",
+    "name": "Arena.ai",
+    "color": "#F97316",
+    "text": "Ar",
+    "site": "https://arena.ai",
+    "models": [
+      "arena"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "ARENA_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "arena"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://arena.ai",
+    "suggested": [
+      "arena"
+    ]
+  },
+  {
+    "id": "zenmux",
+    "name": "ZenMux Free",
+    "color": "#14B8A6",
+    "text": "ZX",
+    "site": "https://zenmux.ai",
+    "models": [
+      "zenmux"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "ZENMUX_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "zenmux"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://zenmux.ai",
+    "suggested": [
+      "zenmux"
+    ]
+  },
+  {
+    "id": "blackbox",
+    "name": "Blackbox Web",
+    "color": "#111827",
+    "text": "BB",
+    "site": "https://app.blackbox.ai",
+    "models": [
+      "blackbox"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "BLACKBOX_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "blackbox"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://app.blackbox.ai",
+    "suggested": [
+      "blackbox"
+    ]
+  },
+  {
+    "id": "inner",
+    "name": "Inner.ai",
+    "color": "#EC4899",
+    "text": "In",
+    "site": "https://app.innerai.com",
+    "models": [
+      "inner"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "INNER_TOKEN",
+        "label": "Token/cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "inner"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://app.innerai.com",
+    "suggested": [
+      "inner"
+    ]
+  },
+  {
+    "id": "adapta",
+    "name": "Adapta Web",
+    "color": "#6366F1",
+    "text": "Ad",
+    "site": "https://agent.adapta.one",
+    "models": [
+      "adapta"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "ADAPTA_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "adapta"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://agent.adapta.one",
+    "suggested": [
+      "adapta"
+    ]
+  },
+  {
+    "id": "muse",
+    "name": "Meta AI / Muse",
+    "color": "#0668E1",
+    "text": "Me",
+    "site": "https://www.meta.ai",
+    "models": [
+      "muse"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "MUSE_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "muse"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://www.meta.ai",
+    "suggested": [
+      "muse"
+    ]
+  },
+  {
+    "id": "tinycms",
+    "name": "TinyCMS / FreeGPT",
+    "color": "#84CC16",
+    "text": "TC",
+    "site": "https://gov.freegpt.win",
+    "models": [
+      "tinycms"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "TINYCMS_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "tinycms"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://gov.freegpt.win",
+    "suggested": [
+      "tinycms"
+    ]
+  },
+  {
+    "id": "maxai",
+    "name": "MaxAI",
+    "color": "#F43F5E",
+    "text": "Mx",
+    "site": "https://www.maxai.co",
+    "models": [
+      "maxai"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "MAXAI_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "maxai"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://www.maxai.co",
+    "suggested": [
+      "maxai"
+    ]
+  },
+  {
+    "id": "pollinations",
+    "name": "Pollinations",
+    "color": "#F59E0B",
+    "text": "Po",
+    "site": "https://pollinations.ai",
+    "models": [
+      "pollinations"
+    ],
+    "scraper": "none",
+    "auth": "apikey",
+    "envKey": "POLLINATIONS_KEY",
+    "optional": true,
+    "modelsArr": [
+      "pollinations"
+    ],
+    "kind": "media",
+    "blurb": "API key provider",
+    "keyUrl": "https://pollinations.ai",
+    "suggested": [
+      "pollinations"
+    ]
+  },
+  {
+    "id": "doubao",
+    "name": "Doubao / Dola",
+    "color": "#3B82F6",
+    "text": "Db",
+    "site": "https://www.dola.com",
+    "models": [
+      "doubao"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "DOUBAO_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "doubao"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://www.dola.com",
+    "suggested": [
+      "doubao"
+    ]
+  },
+  {
+    "id": "zai",
+    "name": "Z.ai Web",
+    "color": "#8B5CF6",
+    "text": "Z",
+    "site": "https://chat.z.ai",
+    "models": [
+      "zai"
+    ],
+    "scraper": "zai",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "ZAI_COOKIE",
+        "label": "Cookie",
+        "area": true
+      },
+      {
+        "key": "ZAI_TOKEN",
+        "label": "Token"
+      }
+    ],
+    "modelsArr": [
+      "zai"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://chat.z.ai",
+    "suggested": [
+      "zai"
+    ]
+  },
+  {
+    "id": "yuanbao",
+    "name": "Tencent Yuanbao",
+    "color": "#22C55E",
+    "text": "Yb",
+    "site": "https://yuanbao.tencent.com",
+    "models": [
+      "yuanbao"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "YUANBAO_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "yuanbao"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://yuanbao.tencent.com",
+    "suggested": [
+      "yuanbao"
+    ]
+  },
+  {
+    "id": "aistudio",
+    "name": "Tencent AI Studio",
+    "color": "#16A34A",
+    "text": "AS",
+    "site": "https://aistudio.tencent.ai",
+    "models": [
+      "aistudio"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "AISTUDIO_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "aistudio"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://aistudio.tencent.ai",
+    "suggested": [
+      "aistudio"
+    ]
+  },
+  {
+    "id": "v0",
+    "name": "v0.dev",
+    "color": "#000000",
+    "text": "v0",
+    "site": "https://v0.dev",
+    "models": [
+      "v0"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "V0_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "v0"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://v0.dev",
+    "suggested": [
+      "v0"
+    ]
+  },
+  {
+    "id": "notion",
+    "name": "Notion AI",
+    "color": "#111111",
+    "text": "No",
+    "site": "https://www.notion.so",
+    "models": [
+      "notion"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "NOTION_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "notion"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://www.notion.so",
+    "suggested": [
+      "notion"
+    ]
+  },
+  {
+    "id": "cloudflare",
+    "name": "Cloudflare Workers AI",
+    "color": "#F97316",
+    "text": "CF",
+    "site": "https://dash.cloudflare.com",
+    "models": [
+      "cloudflare"
+    ],
+    "scraper": "none",
+    "auth": "apikey",
+    "envKey": "CF_API_TOKEN",
+    "modelsArr": [
+      "cloudflare"
+    ],
+    "kind": "chat",
+    "blurb": "API key provider",
+    "keyUrl": "https://dash.cloudflare.com",
+    "suggested": [
+      "cloudflare"
+    ]
+  },
+  {
+    "id": "longcat",
+    "name": "LongCat",
+    "color": "#06B6D4",
+    "text": "LC",
+    "site": "https://longcat.chat",
+    "models": [
+      "longcat"
+    ],
+    "scraper": "none",
+    "auth": "apikey",
+    "envKey": "LONGCAT_API_KEY",
+    "modelsArr": [
+      "longcat"
+    ],
+    "kind": "chat",
+    "blurb": "API key provider",
+    "keyUrl": "https://longcat.chat",
+    "suggested": [
+      "longcat"
+    ]
+  },
+  {
+    "id": "promptql",
+    "name": "PromptQL",
+    "color": "#7C3AED",
+    "text": "PQ",
+    "site": "https://prompt.ql.app",
+    "models": [
+      "promptql"
+    ],
+    "scraper": "bearer",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "PROMPTQL_TOKEN",
+        "label": "JWT",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "promptql"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://prompt.ql.app",
+    "suggested": [
+      "promptql"
+    ]
+  },
+  {
+    "id": "hyperagent",
+    "name": "HyperAgent",
+    "color": "#0F766E",
+    "text": "HA",
+    "site": "https://hyperagent.com",
+    "models": [
+      "hyperagent"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "HYPERAGENT_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "hyperagent"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://hyperagent.com",
+    "suggested": [
+      "hyperagent"
+    ]
+  },
+  {
+    "id": "conol",
+    "name": "Conol",
+    "color": "#BE185D",
+    "text": "Co",
+    "site": "https://conol.ai",
+    "models": [
+      "conol"
+    ],
+    "scraper": "cookie",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "CONOL_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "conol"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://conol.ai",
+    "suggested": [
+      "conol"
+    ]
+  },
+  {
+    "id": "twinmind",
+    "name": "Twinmind",
+    "color": "#1D4ED8",
+    "text": "TM",
+    "site": "https://app.twinmind.com",
+    "models": [
+      "twinmind"
+    ],
+    "scraper": "bearer",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "TWINMIND_TOKEN",
+        "label": "JWT",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "twinmind"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://app.twinmind.com",
+    "suggested": [
+      "twinmind"
+    ]
+  },
+  {
+    "id": "syntx",
+    "name": "SYNTX.ai",
+    "color": "#B45309",
+    "text": "SX",
+    "site": "https://syntx.ai",
+    "models": [
+      "syntx"
+    ],
+    "scraper": "bearer",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "SYNTX_TOKEN",
+        "label": "JWT",
+        "area": true
+      }
+    ],
+    "modelsArr": [
+      "syntx"
+    ],
+    "kind": "chat",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://syntx.ai",
+    "suggested": [
+      "syntx"
+    ]
+  },
+  {
+    "id": "veo",
+    "name": "Veo Free",
+    "color": "#EA4335",
+    "text": "V",
+    "site": "https://veoaifree.com",
+    "models": [
+      "veo",
+      "veo-image"
+    ],
+    "scraper": "none",
+    "auth": "session",
+    "fields": [
+      {
+        "key": "VEO_ENABLED",
+        "label": "Enabled 1/0"
+      }
+    ],
+    "modelsArr": [
+      "veo",
+      "veo-image"
+    ],
+    "kind": "media",
+    "blurb": "Web session / cookie provider",
+    "keyUrl": "https://veoaifree.com",
+    "suggested": [
+      "veo",
+      "veo-image"
+    ]
+  }
+]

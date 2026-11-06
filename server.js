@@ -206,6 +206,14 @@ const server = http.createServer(async (req, res) => {
       return res.end();
     }
 
+    
+    if (pathname === '/admin-providers.json') {
+      const f = path.join(PUBLIC, 'admin-providers.json');
+      if (!fs.existsSync(f)) { res.writeHead(404); return res.end('[]'); }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      return res.end(fs.readFileSync(f));
+    }
+
     if (pathname === '/admin' || pathname === '/admin/') {
       const html = path.join(PUBLIC, 'admin.html');
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -242,7 +250,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/api/providers-catalog' && req.method === 'GET') {
       return sendJson(res, 200, {
         providers: catalog.PROVIDERS,
-        icons: catalog.listIconFiles(),
+        icons: catalog.resolveIcons ? catalog.resolveIcons() : catalog.listIconFiles(),
       });
     }
 
@@ -260,6 +268,21 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    
+    if (pathname === '/api/admin/icon-link' && req.method === 'POST') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason });
+      const raw = await readBody(req);
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { return sendJson(res, 400, { error: 'bad json' }); }
+      try {
+        const url = catalog.saveIconLink(body.id, body.url);
+        return sendJson(res, 200, { ok: true, url, icons: catalog.resolveIcons() });
+      } catch (e) {
+        return sendJson(res, 400, { error: e.message || String(e) });
+      }
+    }
+
     if (pathname === '/api/admin/icon' && req.method === 'POST') {
       const auth = config.checkAdminAuth(req);
       if (!auth.ok) return sendJson(res, 401, { error: auth.reason });
@@ -268,7 +291,7 @@ const server = http.createServer(async (req, res) => {
       try { body = JSON.parse(raw || '{}'); } catch { return sendJson(res, 400, { error: 'bad json' }); }
       try {
         const url = catalog.saveIcon(body.id, body.mime || 'image/png', body.data || '');
-        return sendJson(res, 200, { ok: true, url, icons: catalog.listIconFiles() });
+        return sendJson(res, 200, { ok: true, url, icons: catalog.resolveIcons ? catalog.resolveIcons() : catalog.listIconFiles() });
       } catch (e) {
         return sendJson(res, 400, { error: e.message || String(e) });
       }
