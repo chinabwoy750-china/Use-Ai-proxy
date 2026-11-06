@@ -228,7 +228,7 @@ function card(p) {
   return `<article class="card ${open?'open':''}" data-id="${p.id}">
     <div class="card-h" data-toggle="${p.id}">
       <div class="icon" style="background:${p.color}">${iconHtml(p)}</div>
-      <div class="meta"><h2>${p.name}</h2><p>${p.site.replace(/^https?:\\/\\//,'')} · ${(p.models||[]).slice(0,3).join(', ')}</p></div>
+      <div class="meta"><h2>${p.name}</h2><p>${String(p.site||'').replace('https://','').replace('http://','')} · ${(p.models||[]).slice(0,3).join(', ')}</p></div>
       <span class="pill ${on?'ok':'no'}">${on?'connected':'not set'}</span>
       <span class="chev">▸</span>
     </div>
@@ -456,8 +456,17 @@ async function renderDash(reload) {
 }
 
 function render() {
-  if (!token) renderLogin();
-  else renderDash(true).catch(e => toast(e.message, false));
+  try {
+    if (!token) renderLogin();
+    else renderDash(true).catch(e => {
+      console.error(e);
+      toast(e.message || String(e), false);
+      renderLogin();
+    });
+  } catch (e) {
+    console.error(e);
+    document.getElementById('root').innerHTML = '<div class="login"><h1>Admin</h1><p class="sub">' + (e.message||e) + '</p></div>';
+  }
 }
 render();
 </script>
