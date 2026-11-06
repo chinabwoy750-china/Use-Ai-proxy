@@ -61,7 +61,6 @@ const hyperagentProxy = load('./providers/hyperagent-proxy');
 const conolProxy = load('./providers/conol-proxy');
 const twinmindProxy = load('./providers/twinmind-proxy');
 const syntxProxy = load('./providers/syntx-proxy');
-const openrouterProxy = load('./providers/openrouter-proxy');
 
 
 
@@ -107,7 +106,6 @@ function routeProxy(model) {
   if ((m.startsWith('conol')) && conolProxy) return conolProxy;
   if ((m.startsWith('twinmind') || m.startsWith('twin-mind')) && twinmindProxy) return twinmindProxy;
   if ((m.startsWith('syntx')) && syntxProxy) return syntxProxy;
-  if ((m.startsWith('openrouter') || m.startsWith('or/') || m === 'crouton-alpha' || m.startsWith('lyria-') || m.startsWith('nemotron-') || m.includes(':free')) && openrouterProxy) return openrouterProxy;
 
 
 
@@ -191,7 +189,6 @@ function collectModels() {
   add(conolProxy, 'conol');
   add(twinmindProxy, 'twinmind');
   add(syntxProxy, 'syntx');
-  add(openrouterProxy, 'openrouter');
   return models;
 }
 
