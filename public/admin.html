@@ -169,7 +169,7 @@ window.__iconErr=async function(img){try{if(img.dataset.fallbackTried){img.style
 function accountFields(p){
   // Single schema per provider — no duplicate session card
   if(p.fields && p.fields.length) return p.fields;
-  if(p.auth==='apikey' && p.envKey) return [{key:p.envKey,label:'API key',area:true}];
+  if(p.auth==='apikey' && p.id!=='kiro'){key:p.envKey,label:'API key',area:true}];
   return [{key:'VALUE',label:'Credential',area:true}];
 }
 function accountsOf(p){const c=connMap[p.id]||{};return Array.isArray(c.accounts)?c.accounts:[]}
