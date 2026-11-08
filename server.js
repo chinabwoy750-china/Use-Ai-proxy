@@ -341,6 +341,51 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, { object: 'list', data });
     }
 
+    
+    if (pathname === '/api/extension/import' && req.method === 'POST') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason || 'unauthorized' });
+      try {
+        const raw = await readBody(req);
+        const body = JSON.parse(raw || '{}');
+        const provider = String(body.provider || '').trim();
+        const values = body.values && typeof body.values === 'object' ? body.values : {};
+        const name = String(body.name || 'Extension').trim();
+        if (!provider) return sendJson(res, 400, { error: 'provider required' });
+        if (!Object.keys(values).length) return sendJson(res, 400, { error: 'values required' });
+
+        // Merge into PROVIDER_CONNECTIONS accounts
+        let all = {};
+        try { all = JSON.parse(process.env.PROVIDER_CONNECTIONS || '{}'); } catch { all = {}; }
+        const entry = all[provider] || { accounts: [] };
+        const accounts = Array.isArray(entry.accounts) ? entry.accounts.slice() : [];
+        accounts.push({
+          name,
+          values,
+          key: values[Object.keys(values)[0]] || '',
+        });
+        entry.accounts = accounts;
+        all[provider] = entry;
+        process.env.PROVIDER_CONNECTIONS = JSON.stringify(all);
+        if (connections && connections.writeConnections) connections.writeConnections(all);
+
+        // Also write env keys for active (first / latest) credentials
+        const envBody = { ...values };
+        envBody.PROVIDER_CONNECTIONS = process.env.PROVIDER_CONNECTIONS;
+        await config.saveFromAdmin(envBody);
+
+        return sendJson(res, 200, {
+          ok: true,
+          message: 'Imported ' + provider + ' account',
+          provider,
+          keys: Object.keys(values),
+          accounts: accounts.length,
+        });
+      } catch (e) {
+        return sendJson(res, 500, { error: e.message || String(e) });
+      }
+    }
+
     if (pathname === '/api/oauth/kiro/device/start' && req.method === 'POST') {
       const auth = config.checkAdminAuth(req);
       if (!auth.ok) return sendJson(res, 401, { error: auth.reason });

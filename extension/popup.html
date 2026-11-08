@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <style>
+    :root { color-scheme: dark; }
+    body { width: 320px; margin: 0; font: 13px/1.4 system-ui,sans-serif; background:#0c1017; color:#eef2f7; }
+    .wrap { padding: 14px; }
+    h1 { margin: 0 0 4px; font-size: 15px; font-weight: 700; }
+    .sub { color:#8b96a8; font-size: 11px; margin-bottom: 12px; }
+    label { display:block; font-size: 11px; color:#8b96a8; margin: 8px 0 4px; }
+    input, select { width: 100%; box-sizing: border-box; background:#161c27; border:1px solid #2a3340; border-radius: 8px; color:#eef2f7; padding: 8px 10px; font: 12px system-ui; }
+    button { width: 100%; margin-top: 12px; border: 0; border-radius: 10px; padding: 10px; font: 600 13px system-ui; cursor: pointer; background: linear-gradient(135deg,#3b82f6,#7c5cff); color:#fff; }
+    button:disabled { opacity: .5; cursor: default; }
+    .status { margin-top: 10px; font-size: 12px; min-height: 1.2em; color:#8b96a8; white-space: pre-wrap; }
+    .status.ok { color: #34d399; }
+    .status.err { color: #f87171; }
+    .row { display:flex; gap: 8px; align-items: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Use-AI Proxy Capture</h1>
+    <div class="sub">Log in on a provider tab, then capture → your proxy</div>
+    <label>Proxy URL</label>
+    <input id="url" placeholder="https://myproxy-use.onrender.com"/>
+    <label>Admin password</label>
+    <input id="pw" type="password" placeholder="ADMIN_PASSWORD"/>
+    <label>Provider (auto from tab if blank)</label>
+    <select id="prov"><option value="">Auto-detect</option></select>
+    <label>Account name (optional)</label>
+    <input id="name" placeholder="Chrome · home"/>
+    <button id="go">Capture &amp; send</button>
+    <div class="status" id="st"></div>
+  </div>
+  <script src="providers.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

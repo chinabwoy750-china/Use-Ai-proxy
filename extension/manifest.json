@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Use-AI Proxy Capture",
+  "version": "1.0.0",
+  "description": "Capture logged-in provider cookies/tokens (including HttpOnly) and send them to your myproxy-use admin.",
+  "action": {
+    "default_title": "Capture → myproxy-use",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": ["cookies", "storage", "activeTab", "scripting"],
+  "host_permissions": [
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
