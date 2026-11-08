@@ -20,41 +20,77 @@ const GRANT_TYPES = ['urn:ietf:params:oauth:grant-type:device_code', 'refresh_to
 const ISSUER = 'https://identitycenter.amazonaws.com/ssoins-722374e8c3c8e6c6';
 
 
-async function fetchProfileArn(accessToken) {
+async function fetchProfileArn(accessToken, region = 'us-east-1') {
   if (!accessToken) return null;
-  try {
-    const r = await fetch('https://codewhisperer.us-east-1.amazonaws.com/ListAvailableProfiles', {
-      method: 'POST',
+  const endpoints = [
+    {
+      url: `https://codewhisperer.${region}.amazonaws.com`,
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.0',
+        'x-amz-target': 'AmazonCodeWhispererService.ListAvailableProfiles',
+        Authorization: 'Bearer ' + accessToken,
+        'x-amz-sso-bearer': accessToken,
+        Accept: 'application/json',
+        'User-Agent': 'AWS-SDK-JS/3.0.0 kiro-ide/1.0.0',
+      },
+    },
+    {
+      url: `https://codewhisperer.${region}.amazonaws.com/ListAvailableProfiles`,
       headers: {
         'Content-Type': 'application/json',
-        Accept: 'application/json',
         Authorization: 'Bearer ' + accessToken,
+        'x-amz-sso-bearer': accessToken,
+        Accept: 'application/json',
       },
-      body: JSON.stringify({ maxResults: 10 }),
-    });
-    if (!r.ok) {
-      // x-amz-target style
-      const r2 = await fetch('https://codewhisperer.us-east-1.amazonaws.com', {
+    },
+    {
+      url: `https://q.${region}.amazonaws.com`,
+      headers: {
+        'Content-Type': 'application/x-amz-json-1.0',
+        'x-amz-target': 'AmazonCodeWhispererService.ListAvailableProfiles',
+        Authorization: 'Bearer ' + accessToken,
+        'x-amz-sso-bearer': accessToken,
+        Accept: 'application/json',
+      },
+    },
+  ];
+  for (const ep of endpoints) {
+    try {
+      const r = await fetch(ep.url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-amz-json-1.0',
-          'x-amz-target': 'AmazonCodeWhispererService.ListAvailableProfiles',
-          Authorization: 'Bearer ' + accessToken,
-          Accept: 'application/json',
-        },
+        headers: ep.headers,
         body: JSON.stringify({ maxResults: 10 }),
       });
-      if (!r2.ok) return null;
-      const d2 = await r2.json();
-      const profiles = Array.isArray(d2.profiles) ? d2.profiles : [];
-      return (profiles.find((p) => p.arn) || profiles[0] || {}).arn || null;
+      const text = await r.text();
+      if (!r.ok) continue;
+      let data = {};
+      try { data = JSON.parse(text); } catch { continue; }
+      const profiles = Array.isArray(data.profiles) ? data.profiles : [];
+      const arnOf = (p) => (p && (p.arn || p.profileArn)) || null;
+      const match =
+        profiles.find((p) => String(arnOf(p) || '').includes(':' + region + ':')) ||
+        profiles.find((p) => arnOf(p)) ||
+        profiles[0];
+      const arn = arnOf(match);
+      if (arn) return arn;
+    } catch {
+      /* try next */
     }
-    const data = await r.json();
-    const profiles = Array.isArray(data.profiles) ? data.profiles : [];
-    return (profiles.find((p) => p.arn) || profiles[0] || {}).arn || null;
-  } catch {
-    return null;
   }
+  return null;
+}
+
+/** 9router shared defaults when ListAvailableProfiles returns empty */
+const DEFAULT_PROFILE_ARNS = {
+  'builder-id': 'arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX',
+  social: 'arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK',
+  google: 'arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK',
+  github: 'arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK',
+};
+
+function resolveDefaultProfileArn(authMethod) {
+  const m = String(authMethod || 'builder-id').toLowerCase();
+  return DEFAULT_PROFILE_ARNS[m] || DEFAULT_PROFILE_ARNS['builder-id'];
 }
 
 /** In-memory OAuth sessions (device + social PKCE) */
@@ -246,5 +282,7 @@ module.exports = {
   exchangeSocial,
   refreshSocial,
   fetchProfileArn,
+  resolveDefaultProfileArn,
+  DEFAULT_PROFILE_ARNS,
   REDIRECT_URI,
 };

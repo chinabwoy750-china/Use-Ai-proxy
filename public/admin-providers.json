@@ -725,9 +725,23 @@
       {
         "key": "KIRO_API_KEY",
         "label": "API key (optional)"
+      },
+      {
+        "key": "KIRO_PROFILE_ARN",
+        "label": "Profile ARN (optional \u2014 auto if blank)",
+        "area": true
+      },
+      {
+        "key": "KIRO_CLIENT_ID",
+        "label": "Client ID (Builder ID)"
+      },
+      {
+        "key": "KIRO_CLIENT_SECRET",
+        "label": "Client Secret (Builder ID)",
+        "area": true
       }
     ],
-    "blurb": "Kiro uses OAuth (Google / GitHub / AWS Builder ID). Import models lists the full Kiro catalog. If test fails with refresh 401, re-login \u2014 token expired or wrong auth method."
+    "blurb": "Kiro OAuth (Builder ID / Google / GitHub). profileArn is resolved automatically; paste KIRO_PROFILE_ARN only if auto-detect fails."
   },
   {
     "group": "free",

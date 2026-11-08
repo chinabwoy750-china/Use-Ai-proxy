@@ -162,10 +162,14 @@ const proxy = makeProxy({
       try {
         profileArn = (await kiroOauth.fetchProfileArn(access)) || '';
         if (profileArn) persistCredsPatch({ KIRO_PROFILE_ARN: profileArn });
-      } catch {}
+      } catch (e) {
+        console.error('[kiro] profileArn fetch failed', e.message || e);
+      }
     }
     if (!profileArn && !apiKey) {
-      throw new Error('Kiro profileArn is required — re-login with Builder ID/Google so profile can be resolved, or set KIRO_PROFILE_ARN');
+      // 9router fallback shared defaults
+      profileArn = kiroOauth.resolveDefaultProfileArn(creds.authMethod || 'builder-id');
+      if (profileArn) persistCredsPatch({ KIRO_PROFILE_ARN: profileArn });
     }
     const prompt = lastUserText(ctx.opts.messages);
     const modelId = upstreamModelId(ctx.opts.model);
@@ -202,6 +206,7 @@ const proxy = makeProxy({
           Authorization: 'Bearer ' + token,
           'x-amz-sso-bearer': token,
           'x-amzn-kiro-agent-mode': 'spec',
+          'x-amzn-codewhisperer-machine-id': 'kiro-desktop',
           'User-Agent': 'AWS-SDK-JS/3.0.0 kiro-ide/1.0.0',
           ...(profileArn ? { 'x-amzn-codewhisperer-profile-arn': profileArn } : {}),
         },
