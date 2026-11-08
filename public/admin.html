@@ -167,9 +167,8 @@ function icon(p){const src=iconsMap[p.id];if(src)return `<img src="${src}" alt="
 window.__iconErr=async function(img){try{if(img.dataset.fallbackTried){img.style.display='none';return}img.dataset.fallbackTried='1';const j=await fetch('/api/icons/candidates/'+encodeURIComponent(img.dataset.pid)).then(r=>r.json()).catch(()=>null);const next=((j&&j.candidates)||[]).find(u=>u&&u!==img.src);if(next){img.dataset.fallbackTried='';img.src=next}else img.style.display='none'}catch{img.style.display='none'}};
 
 function accountFields(p){
-  // Single schema per provider — no duplicate session card
   if(p.fields && p.fields.length) return p.fields;
-  if(p.auth==='apikey' && p.id!=='kiro'){key:p.envKey,label:'API key',area:true}];
+  if(p.auth==='apikey' && p.envKey) return [{key:p.envKey,label:'API key',area:true}];
   return [{key:'VALUE',label:'Credential',area:true}];
 }
 function accountsOf(p){const c=connMap[p.id]||{};return Array.isArray(c.accounts)?c.accounts:[]}
@@ -212,8 +211,7 @@ async function persistAccounts(p, accounts){
   await saveConn(p.id,{accounts, roundRobin:!!(connMap[p.id]&&connMap[p.id].roundRobin)});
   const fields=accountFields(p);
   const body={};
-  if(p.auth==='apikey' || fields.some(f=>/KEY|TOKEN/i.test(f.key) && !/COOKIE|REFRESH/i.test(f.key))){
-    // For API keys: join all account primary secrets
+  if(p.auth==='apikey' && p.id!=='kiro'){
     const primary=fields[0];
     if(primary){
       body[primary.key]=accounts.map(a=>{
@@ -222,10 +220,8 @@ async function persistAccounts(p, accounts){
       }).filter(Boolean).join('\n');
     }
   } else {
-    // session: use first account values (active), still store multi in connections
     const active=accounts[0];
     if(active && active.values){
-      for(const [k,v] of Object.entries(active.values)){ if(v) body[k]=v; }
       for(const [k,val] of Object.entries(active.values)){ if(val!=null && val!=='') body[k]=val; }
     }
   }
