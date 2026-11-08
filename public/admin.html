@@ -226,7 +226,7 @@ async function persistAccounts(p, accounts){
     const active=accounts[0];
     if(active && active.values){
       for(const [k,v] of Object.entries(active.values)){ if(v) body[k]=v; }
-      for(const f of fields){ if(active.values[f.key]) body[f.key]=active.values[f.key]; }
+      for(const [k,val] of Object.entries(active.values)){ if(val!=null && val!=='') body[k]=val; }
     }
   }
   if(Object.keys(body).length){
@@ -361,6 +361,7 @@ function renderDetail(){
       };
       if (tokens.clientId) values.KIRO_CLIENT_ID = tokens.clientId;
       if (tokens.clientSecret) values.KIRO_CLIENT_SECRET = tokens.clientSecret;
+      if (tokens.authMethod) values.KIRO_AUTH_METHOD = tokens.authMethod;
       const next = [...accountsOf(p), { name: name || ('Kiro ' + (tokens.authMethod || 'oauth')), values, key: values.KIRO_REFRESH_TOKEN || values.KIRO_ACCESS_TOKEN }];
       await persistAccounts(p, next);
       toast('Kiro account added');

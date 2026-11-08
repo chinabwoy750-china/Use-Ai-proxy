@@ -1,6 +1,6 @@
 'use strict';
 const { makeProxy, lastUserText, readSseOpenAI } = require('../web-kit');
-const kiroOauth = require('../kiro-oauth');
+const connections = require('../connection-store');
 
 const REFRESH_URL = process.env.KIRO_REFRESH_URL || 'https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken';
 const OIDC_TOKEN = 'https://oidc.us-east-1.amazonaws.com/token';
@@ -9,7 +9,6 @@ const BASES = (
   'https://runtime.us-east-1.kiro.dev/generateAssistantResponse'
 ).split(',').map((s) => s.trim()).filter(Boolean);
 
-/** Full catalog (9router registry-aligned). Exposed as kiro/<id> and bare id where safe. */
 const KIRO_MODEL_IDS = [
   'claude-opus-5.5', 'claude-opus-5.5-thinking', 'claude-opus-5.5-agentic', 'claude-opus-5.5-thinking-agentic',
   'claude-opus-5', 'claude-opus-5-thinking', 'claude-opus-5-agentic', 'claude-opus-5-thinking-agentic',
@@ -21,9 +20,6 @@ const KIRO_MODEL_IDS = [
   'claude-haiku-4.5', 'claude-haiku-4.5-thinking', 'claude-haiku-4.5-agentic', 'claude-haiku-4.5-thinking-agentic',
   'deepseek-3.2', 'qwen3-coder-next', 'glm-5', 'MiniMax-M2.5',
   'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna',
-  'gpt-5.6-sol-thinking', 'gpt-5.6-terra-thinking', 'gpt-5.6-luna-thinking',
-  'gpt-5.6-sol-agentic', 'gpt-5.6-terra-agentic', 'gpt-5.6-luna-agentic',
-  'gpt-5.6-sol-thinking-agentic', 'gpt-5.6-terra-thinking-agentic', 'gpt-5.6-luna-thinking-agentic',
 ];
 
 const MODELS = [
@@ -39,15 +35,52 @@ function upstreamModelId(model) {
   return m;
 }
 
-async function refreshAccess() {
-  const refresh = process.env.KIRO_REFRESH_TOKEN || '';
+/** Prefer connection-store account values (multi-account), fall back to env */
+function loadCreds() {
+  let accounts = [];
+  try {
+    const all = connections.getAll ? connections.getAll() : JSON.parse(process.env.PROVIDER_CONNECTIONS || '{}');
+    const entry = all.kiro || all.Kiro || {};
+    accounts = Array.isArray(entry.accounts) ? entry.accounts : [];
+  } catch {}
+  const v = (accounts[0] && accounts[0].values) || {};
+  return {
+    access: v.KIRO_ACCESS_TOKEN || process.env.KIRO_ACCESS_TOKEN || '',
+    refresh: v.KIRO_REFRESH_TOKEN || process.env.KIRO_REFRESH_TOKEN || '',
+    apiKey: v.KIRO_API_KEY || process.env.KIRO_API_KEY || '',
+    clientId: v.KIRO_CLIENT_ID || process.env.KIRO_CLIENT_ID || '',
+    clientSecret: v.KIRO_CLIENT_SECRET || process.env.KIRO_CLIENT_SECRET || '',
+    authMethod: v.KIRO_AUTH_METHOD || process.env.KIRO_AUTH_METHOD || '',
+    accounts,
+  };
+}
+
+function persistCredsPatch(patch) {
+  try {
+    const all = connections.getAll ? connections.getAll() : JSON.parse(process.env.PROVIDER_CONNECTIONS || '{}');
+    const entry = all.kiro || { accounts: [] };
+    const accounts = Array.isArray(entry.accounts) ? entry.accounts.slice() : [];
+    if (!accounts.length) accounts.push({ name: 'Kiro', values: {} });
+    accounts[0].values = Object.assign({}, accounts[0].values || {}, patch);
+    entry.accounts = accounts;
+    all.kiro = entry;
+    if (connections.setAll) connections.setAll(all);
+    else process.env.PROVIDER_CONNECTIONS = JSON.stringify(all);
+  } catch {}
+  for (const [k, val] of Object.entries(patch)) {
+    if (val) process.env[k] = val;
+  }
+}
+
+async function refreshAccess(creds) {
+  const refresh = creds.refresh;
   if (!refresh) throw new Error('No KIRO_REFRESH_TOKEN — run OAuth again (Google / GitHub / Builder ID)');
 
-  const clientId = process.env.KIRO_CLIENT_ID || '';
-  const clientSecret = process.env.KIRO_CLIENT_SECRET || '';
+  const clientId = creds.clientId;
+  const clientSecret = creds.clientSecret;
+  const isBuilder = !!(clientId && clientSecret) || creds.authMethod === 'builder-id';
 
-  // Builder ID / IDC — must use AWS OIDC token endpoint
-  if (clientId && clientSecret) {
+  if (isBuilder && clientId && clientSecret) {
     const r = await fetch(OIDC_TOKEN, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -61,16 +94,24 @@ async function refreshAccess() {
     const text = await r.text();
     if (!r.ok) {
       throw new Error(
-        'Kiro OIDC refresh ' + r.status + ': ' + text.slice(0, 160) +
-          ' — Builder ID session expired; add account again via OAuth'
+        'Kiro OIDC (Builder ID) refresh ' + r.status + ': ' + text.slice(0, 180) +
+          ' — remove account and login with AWS Builder ID again'
       );
     }
     const j = JSON.parse(text);
-    if (j.refreshToken) process.env.KIRO_REFRESH_TOKEN = j.refreshToken;
-    return j.accessToken;
+    const access = j.accessToken;
+    const patch = { KIRO_ACCESS_TOKEN: access };
+    if (j.refreshToken) patch.KIRO_REFRESH_TOKEN = j.refreshToken;
+    persistCredsPatch(patch);
+    return access;
   }
 
-  // Social (Google/GitHub) or imported token (often starts with aorAAAAAG)
+  if (isBuilder && (!clientId || !clientSecret)) {
+    throw new Error(
+      'Builder ID account is missing clientId/clientSecret. Delete the Kiro account and add it again with AWS Builder ID OAuth so those are saved.'
+    );
+  }
+
   const r = await fetch(REFRESH_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -85,22 +126,29 @@ async function refreshAccess() {
   }
   let j = {};
   try { j = JSON.parse(text); } catch { throw new Error('Kiro refresh: bad JSON'); }
-  if (j.refreshToken) process.env.KIRO_REFRESH_TOKEN = j.refreshToken;
-  return j.accessToken || j.access_token || j.token;
+  const access = j.accessToken || j.access_token || j.token;
+  const patch = { KIRO_ACCESS_TOKEN: access };
+  if (j.refreshToken) patch.KIRO_REFRESH_TOKEN = j.refreshToken;
+  persistCredsPatch(patch);
+  return access;
 }
 
 const proxy = makeProxy({
   name: 'kiro',
   models: MODELS,
-  getCookie: () => process.env.KIRO_ACCESS_TOKEN || process.env.KIRO_REFRESH_TOKEN || '',
+  getCookie: () => {
+    const c = loadCreds();
+    return c.access || c.refresh || c.apiKey || '';
+  },
   async run(ctx) {
-    let access = process.env.KIRO_ACCESS_TOKEN || '';
-    const refresh = process.env.KIRO_REFRESH_TOKEN || '';
-    const apiKey = process.env.KIRO_API_KEY || '';
+    let creds = loadCreds();
+    let access = creds.access;
+    const apiKey = creds.apiKey;
 
-    if ((!access || process.env.KIRO_FORCE_REFRESH === '1') && refresh) {
-      access = await refreshAccess();
-      process.env.KIRO_ACCESS_TOKEN = access;
+    if ((!access || process.env.KIRO_FORCE_REFRESH === '1') && creds.refresh) {
+      access = await refreshAccess(creds);
+      creds = loadCreds();
+      access = access || creds.access;
     }
     if (!access && !apiKey) {
       throw new Error('Kiro not configured — use OAuth on the Kiro provider page (Google / GitHub / Builder ID)');
@@ -155,10 +203,8 @@ const proxy = makeProxy({
     });
     const text = await r.text();
     if (!r.ok) {
-      // Access expired → try one refresh if we have refresh token
-      if ((r.status === 401 || r.status === 403) && refresh) {
-        const neu = await refreshAccess();
-        process.env.KIRO_ACCESS_TOKEN = neu;
+      if ((r.status === 401 || r.status === 403) && creds.refresh) {
+        await refreshAccess(loadCreds());
         throw new Error('Kiro auth expired and was refreshed — retry the request');
       }
       throw new Error('Kiro ' + r.status + ': ' + text.slice(0, 240));
@@ -175,4 +221,5 @@ const proxy = makeProxy({
 
 proxy.MODELS = MODELS;
 proxy.KIRO_MODEL_IDS = KIRO_MODEL_IDS;
+proxy.loadCreds = loadCreds;
 module.exports = proxy;

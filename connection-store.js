@@ -47,4 +47,6 @@ function setConnection(id, patch) {
   return next;
 }
 
-module.exports = { readConnections, writeConnections, getConnection, setConnection, DEFAULTS };
+function getAll() { return readConnections(); }
+function setAll(obj) { return writeConnections(obj); }
+module.exports = { readConnections, writeConnections, getConnection, setConnection, getAll, setAll, DEFAULTS };
