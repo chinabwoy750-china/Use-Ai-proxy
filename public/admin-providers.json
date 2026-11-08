@@ -1,16 +1,16 @@
 [
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "deepseek",
     "name": "DeepSeek",
     "color": "#4D6BFE",
     "text": "DS",
     "site": "https://chat.deepseek.com",
     "models": [
-      "deepseek-chat",
-      "deepseek-reasoner"
+      "deepseek-chat"
     ],
-    "scraper": "deepseek",
-    "auth": "session",
     "fields": [
       {
         "key": "DEEPSEEK_TOKEN",
@@ -20,36 +20,23 @@
         "key": "DEEPSEEK_COOKIE",
         "label": "Cookie",
         "area": true
-      },
-      {
-        "key": "DEEPSEEK_URL",
-        "label": "URL"
       }
     ],
-    "modelsArr": [
-      "deepseek-chat",
-      "deepseek-reasoner"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://chat.deepseek.com",
-    "suggested": [
-      "deepseek-chat",
-      "deepseek-reasoner"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "kimi",
     "name": "Kimi / Moonshot",
-    "color": "#1A1A1A",
+    "color": "#111",
     "text": "Ki",
     "site": "https://www.kimi.ai",
     "models": [
-      "kimi",
-      "kimi-k2"
+      "kimi"
     ],
-    "scraper": "kimi",
-    "auth": "session",
     "fields": [
       {
         "key": "KIMI_TOKEN",
@@ -60,36 +47,23 @@
         "key": "KIMI_REFRESH_TOKEN",
         "label": "Refresh token",
         "area": true
-      },
-      {
-        "key": "KIMI_URL",
-        "label": "URL"
       }
     ],
-    "modelsArr": [
-      "kimi",
-      "kimi-k2"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://www.kimi.ai",
-    "suggested": [
-      "kimi",
-      "kimi-k2"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "perplexity",
     "name": "Perplexity Web",
     "color": "#20808D",
     "text": "Px",
     "site": "https://www.perplexity.ai",
     "models": [
-      "perplexity",
-      "pplx-auto"
+      "perplexity"
     ],
-    "scraper": "perplexity",
-    "auth": "session",
     "fields": [
       {
         "key": "PERPLEXITY_COOKIE",
@@ -97,19 +71,13 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "perplexity",
-      "pplx-auto"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://www.perplexity.ai",
-    "suggested": [
-      "perplexity",
-      "pplx-auto"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "grok",
     "name": "Grok Web",
     "color": "#1DA1F2",
@@ -118,8 +86,6 @@
     "models": [
       "grok"
     ],
-    "scraper": "cookie",
-    "auth": "session",
     "fields": [
       {
         "key": "GROK_COOKIE",
@@ -127,28 +93,21 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "grok"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://grok.com",
-    "suggested": [
-      "grok"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "media",
     "id": "uc",
     "name": "UC / uncensored.com",
     "color": "#7C3AED",
     "text": "UC",
     "site": "https://uncensored.com",
     "models": [
-      "uc",
-      "glm-image"
+      "uc"
     ],
-    "scraper": "uc",
-    "auth": "session",
     "fields": [
       {
         "key": "UC_COOKIE",
@@ -156,44 +115,13 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "uc",
-      "glm-image"
-    ],
-    "kind": "media",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://uncensored.com",
-    "suggested": [
-      "uc",
-      "glm-image"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
-    "id": "mistral",
-    "name": "Mistral / Codestral",
-    "color": "#F7D046",
-    "text": "M",
-    "site": "https://console.mistral.ai",
-    "models": [
-      "codestral",
-      "mistral-small"
-    ],
-    "scraper": "none",
-    "auth": "apikey",
-    "envKey": "MISTRAL_API_KEYS",
-    "modelsArr": [
-      "codestral",
-      "mistral-small"
-    ],
+    "group": "web",
+    "auth": "session",
     "kind": "chat",
-    "blurb": "API key provider",
-    "keyUrl": "https://console.mistral.ai",
-    "suggested": [
-      "codestral",
-      "mistral-small"
-    ]
-  },
-  {
     "id": "huggingface",
     "name": "Hugging Face",
     "color": "#FFD21E",
@@ -202,62 +130,27 @@
     "models": [
       "hf"
     ],
-    "scraper": "hf",
-    "auth": "session",
     "fields": [
       {
         "key": "HF_CHAT_COOKIE",
-        "label": "hf-chat"
+        "label": "hf-chat cookie"
       }
     ],
-    "modelsArr": [
-      "hf"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://huggingface.co/chat",
-    "suggested": [
-      "hf"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
-    "id": "opencode",
-    "name": "OpenCode Free",
-    "color": "#E87040",
-    "text": "OC",
-    "site": "https://opencode.ai",
-    "models": [
-      "opencode"
-    ],
-    "scraper": "none",
+    "group": "web",
     "auth": "session",
-    "fields": [
-      {
-        "key": "OPENCODE_ENABLED",
-        "label": "Enabled 1/0"
-      }
-    ],
-    "modelsArr": [
-      "opencode"
-    ],
     "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://opencode.ai",
-    "suggested": [
-      "opencode"
-    ]
-  },
-  {
     "id": "notrack",
-    "name": "NoTrack Web",
+    "name": "NoTrack",
     "color": "#22C55E",
     "text": "NT",
     "site": "https://notrack.ai",
     "models": [
       "notrack"
     ],
-    "scraper": "cookie",
-    "auth": "session",
     "fields": [
       {
         "key": "NOTRACK_COOKIE",
@@ -265,17 +158,13 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "notrack"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://notrack.ai",
-    "suggested": [
-      "notrack"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "t3",
     "name": "t3.chat",
     "color": "#A78BFA",
@@ -284,8 +173,6 @@
     "models": [
       "t3"
     ],
-    "scraper": "cookie",
-    "auth": "session",
     "fields": [
       {
         "key": "T3_COOKIE",
@@ -293,27 +180,21 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "t3"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://t3.chat",
-    "suggested": [
-      "t3"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "venice",
-    "name": "Venice Web",
+    "name": "Venice",
     "color": "#0EA5E9",
     "text": "V",
     "site": "https://venice.ai",
     "models": [
       "venice"
     ],
-    "scraper": "cookie",
-    "auth": "session",
     "fields": [
       {
         "key": "VENICE_COOKIE",
@@ -321,27 +202,21 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "venice"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://venice.ai",
-    "suggested": [
-      "venice"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "poe",
-    "name": "Poe Web",
+    "name": "Poe",
     "color": "#5B21B6",
     "text": "Poe",
     "site": "https://poe.com",
     "models": [
       "poe"
     ],
-    "scraper": "poe",
-    "auth": "session",
     "fields": [
       {
         "key": "POE_COOKIE",
@@ -349,27 +224,21 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "poe"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://poe.com",
-    "suggested": [
-      "poe"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "arena",
-    "name": "Arena.ai",
+    "name": "LM Arena",
     "color": "#F97316",
     "text": "Ar",
-    "site": "https://arena.ai",
+    "site": "https://lmarena.ai",
     "models": [
       "arena"
     ],
-    "scraper": "cookie",
-    "auth": "session",
     "fields": [
       {
         "key": "ARENA_COOKIE",
@@ -377,27 +246,21 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "arena"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://arena.ai",
-    "suggested": [
-      "arena"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "zenmux",
-    "name": "ZenMux Free",
-    "color": "#14B8A6",
-    "text": "ZX",
+    "name": "ZenMux",
+    "color": "#6366F1",
+    "text": "Zm",
     "site": "https://zenmux.ai",
     "models": [
       "zenmux"
     ],
-    "scraper": "cookie",
-    "auth": "session",
     "fields": [
       {
         "key": "ZENMUX_COOKIE",
@@ -405,27 +268,21 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "zenmux"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://zenmux.ai",
-    "suggested": [
-      "zenmux"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "blackbox",
-    "name": "Blackbox Web",
-    "color": "#111827",
-    "text": "BB",
-    "site": "https://app.blackbox.ai",
+    "name": "Blackbox",
+    "color": "#111",
+    "text": "Bb",
+    "site": "https://www.blackbox.ai",
     "models": [
       "blackbox"
     ],
-    "scraper": "cookie",
-    "auth": "session",
     "fields": [
       {
         "key": "BLACKBOX_COOKIE",
@@ -433,190 +290,21 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "blackbox"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://app.blackbox.ai",
-    "suggested": [
-      "blackbox"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
-    "id": "inner",
-    "name": "Inner.ai",
-    "color": "#EC4899",
-    "text": "In",
-    "site": "https://app.innerai.com",
-    "models": [
-      "inner"
-    ],
-    "scraper": "cookie",
+    "group": "web",
     "auth": "session",
-    "fields": [
-      {
-        "key": "INNER_TOKEN",
-        "label": "Token/cookie",
-        "area": true
-      }
-    ],
-    "modelsArr": [
-      "inner"
-    ],
     "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://app.innerai.com",
-    "suggested": [
-      "inner"
-    ]
-  },
-  {
-    "id": "adapta",
-    "name": "Adapta Web",
-    "color": "#6366F1",
-    "text": "Ad",
-    "site": "https://agent.adapta.one",
-    "models": [
-      "adapta"
-    ],
-    "scraper": "cookie",
-    "auth": "session",
-    "fields": [
-      {
-        "key": "ADAPTA_COOKIE",
-        "label": "Cookie",
-        "area": true
-      }
-    ],
-    "modelsArr": [
-      "adapta"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://agent.adapta.one",
-    "suggested": [
-      "adapta"
-    ]
-  },
-  {
-    "id": "muse",
-    "name": "Meta AI / Muse",
-    "color": "#0668E1",
-    "text": "Me",
-    "site": "https://www.meta.ai",
-    "models": [
-      "muse"
-    ],
-    "scraper": "cookie",
-    "auth": "session",
-    "fields": [
-      {
-        "key": "MUSE_COOKIE",
-        "label": "Cookie",
-        "area": true
-      }
-    ],
-    "modelsArr": [
-      "muse"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://www.meta.ai",
-    "suggested": [
-      "muse"
-    ]
-  },
-  {
-    "id": "tinycms",
-    "name": "TinyCMS / FreeGPT",
-    "color": "#84CC16",
-    "text": "TC",
-    "site": "https://gov.freegpt.win",
-    "models": [
-      "tinycms"
-    ],
-    "scraper": "cookie",
-    "auth": "session",
-    "fields": [
-      {
-        "key": "TINYCMS_COOKIE",
-        "label": "Cookie",
-        "area": true
-      }
-    ],
-    "modelsArr": [
-      "tinycms"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://gov.freegpt.win",
-    "suggested": [
-      "tinycms"
-    ]
-  },
-  {
-    "id": "maxai",
-    "name": "MaxAI",
-    "color": "#F43F5E",
-    "text": "Mx",
-    "site": "https://www.maxai.co",
-    "models": [
-      "maxai"
-    ],
-    "scraper": "cookie",
-    "auth": "session",
-    "fields": [
-      {
-        "key": "MAXAI_COOKIE",
-        "label": "Cookie",
-        "area": true
-      }
-    ],
-    "modelsArr": [
-      "maxai"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://www.maxai.co",
-    "suggested": [
-      "maxai"
-    ]
-  },
-  {
-    "id": "pollinations",
-    "name": "Pollinations",
-    "color": "#F59E0B",
-    "text": "Po",
-    "site": "https://pollinations.ai",
-    "models": [
-      "pollinations"
-    ],
-    "scraper": "none",
-    "auth": "apikey",
-    "envKey": "POLLINATIONS_KEY",
-    "optional": true,
-    "modelsArr": [
-      "pollinations"
-    ],
-    "kind": "media",
-    "blurb": "API key provider",
-    "keyUrl": "https://pollinations.ai",
-    "suggested": [
-      "pollinations"
-    ]
-  },
-  {
     "id": "doubao",
-    "name": "Doubao / Dola",
+    "name": "Doubao",
     "color": "#3B82F6",
     "text": "Db",
-    "site": "https://www.dola.com",
+    "site": "https://www.doubao.com",
     "models": [
       "doubao"
     ],
-    "scraper": "cookie",
-    "auth": "session",
     "fields": [
       {
         "key": "DOUBAO_COOKIE",
@@ -624,27 +312,21 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "doubao"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://www.dola.com",
-    "suggested": [
-      "doubao"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "zai",
-    "name": "Z.ai Web",
+    "name": "Z.ai",
     "color": "#8B5CF6",
     "text": "Z",
     "site": "https://chat.z.ai",
     "models": [
       "zai"
     ],
-    "scraper": "zai",
-    "auth": "session",
     "fields": [
       {
         "key": "ZAI_COOKIE",
@@ -656,27 +338,21 @@
         "label": "Token"
       }
     ],
-    "modelsArr": [
-      "zai"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://chat.z.ai",
-    "suggested": [
-      "zai"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "yuanbao",
-    "name": "Tencent Yuanbao",
+    "name": "Yuanbao",
     "color": "#22C55E",
     "text": "Yb",
     "site": "https://yuanbao.tencent.com",
     "models": [
       "yuanbao"
     ],
-    "scraper": "cookie",
-    "auth": "session",
     "fields": [
       {
         "key": "YUANBAO_COOKIE",
@@ -684,27 +360,21 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "yuanbao"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://yuanbao.tencent.com",
-    "suggested": [
-      "yuanbao"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "aistudio",
-    "name": "Tencent AI Studio",
-    "color": "#16A34A",
-    "text": "AS",
-    "site": "https://aistudio.tencent.ai",
+    "name": "Google AI Studio",
+    "color": "#4285F4",
+    "text": "GA",
+    "site": "https://aistudio.google.com",
     "models": [
       "aistudio"
     ],
-    "scraper": "cookie",
-    "auth": "session",
     "fields": [
       {
         "key": "AISTUDIO_COOKIE",
@@ -712,27 +382,21 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "aistudio"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://aistudio.tencent.ai",
-    "suggested": [
-      "aistudio"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "v0",
     "name": "v0.dev",
-    "color": "#000000",
+    "color": "#000",
     "text": "v0",
     "site": "https://v0.dev",
     "models": [
       "v0"
     ],
-    "scraper": "cookie",
-    "auth": "session",
     "fields": [
       {
         "key": "V0_COOKIE",
@@ -740,27 +404,21 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "v0"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://v0.dev",
-    "suggested": [
-      "v0"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "notion",
     "name": "Notion AI",
-    "color": "#111111",
+    "color": "#111",
     "text": "No",
     "site": "https://www.notion.so",
     "models": [
       "notion"
     ],
-    "scraper": "cookie",
-    "auth": "session",
     "fields": [
       {
         "key": "NOTION_COOKIE",
@@ -768,71 +426,131 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "notion"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://www.notion.so",
-    "suggested": [
-      "notion"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
-    "id": "cloudflare",
-    "name": "Cloudflare Workers AI",
-    "color": "#F97316",
-    "text": "CF",
-    "site": "https://dash.cloudflare.com",
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
+    "id": "muse",
+    "name": "Meta AI",
+    "color": "#0668E1",
+    "text": "Me",
+    "site": "https://meta.ai",
     "models": [
-      "cloudflare"
+      "muse"
     ],
-    "scraper": "none",
-    "auth": "apikey",
-    "envKey": "CF_API_TOKEN",
-    "modelsArr": [
-      "cloudflare"
+    "fields": [
+      {
+        "key": "MUSE_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
     ],
-    "kind": "chat",
-    "blurb": "API key provider",
-    "keyUrl": "https://dash.cloudflare.com",
-    "suggested": [
-      "cloudflare"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
-    "id": "longcat",
-    "name": "LongCat",
-    "color": "#06B6D4",
-    "text": "LC",
-    "site": "https://longcat.chat",
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
+    "id": "maxai",
+    "name": "MaxAI",
+    "color": "#F59E0B",
+    "text": "Mx",
+    "site": "https://maxai.me",
     "models": [
-      "longcat"
+      "maxai"
     ],
-    "scraper": "none",
-    "auth": "apikey",
-    "envKey": "LONGCAT_API_KEY",
-    "modelsArr": [
-      "longcat"
+    "fields": [
+      {
+        "key": "MAXAI_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
     ],
-    "kind": "chat",
-    "blurb": "API key provider",
-    "keyUrl": "https://longcat.chat",
-    "suggested": [
-      "longcat"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
+    "id": "inner",
+    "name": "Inner",
+    "color": "#64748B",
+    "text": "In",
+    "site": "https://inner.ai",
+    "models": [
+      "inner"
+    ],
+    "fields": [
+      {
+        "key": "INNER_TOKEN",
+        "label": "Token/cookie",
+        "area": true
+      }
+    ],
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
+  },
+  {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
+    "id": "adapta",
+    "name": "Adapta",
+    "color": "#14B8A6",
+    "text": "Ad",
+    "site": "https://adapta.org",
+    "models": [
+      "adapta"
+    ],
+    "fields": [
+      {
+        "key": "ADAPTA_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
+  },
+  {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
+    "id": "tinycms",
+    "name": "TinyCMS / FreeGPT",
+    "color": "#94A3B8",
+    "text": "Tc",
+    "site": "https://freegpt.one",
+    "models": [
+      "tinycms"
+    ],
+    "fields": [
+      {
+        "key": "TINYCMS_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
+  },
+  {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "promptql",
     "name": "PromptQL",
     "color": "#7C3AED",
     "text": "PQ",
-    "site": "https://prompt.ql.app",
+    "site": "https://promptql.io",
     "models": [
       "promptql"
     ],
-    "scraper": "bearer",
-    "auth": "session",
     "fields": [
       {
         "key": "PROMPTQL_TOKEN",
@@ -840,17 +558,13 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "promptql"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://prompt.ql.app",
-    "suggested": [
-      "promptql"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "hyperagent",
     "name": "HyperAgent",
     "color": "#0F766E",
@@ -859,8 +573,6 @@
     "models": [
       "hyperagent"
     ],
-    "scraper": "cookie",
-    "auth": "session",
     "fields": [
       {
         "key": "HYPERAGENT_COOKIE",
@@ -868,17 +580,13 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "hyperagent"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://hyperagent.com",
-    "suggested": [
-      "hyperagent"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "conol",
     "name": "Conol",
     "color": "#BE185D",
@@ -887,8 +595,6 @@
     "models": [
       "conol"
     ],
-    "scraper": "cookie",
-    "auth": "session",
     "fields": [
       {
         "key": "CONOL_COOKIE",
@@ -896,17 +602,13 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "conol"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://conol.ai",
-    "suggested": [
-      "conol"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "twinmind",
     "name": "Twinmind",
     "color": "#1D4ED8",
@@ -915,8 +617,6 @@
     "models": [
       "twinmind"
     ],
-    "scraper": "bearer",
-    "auth": "session",
     "fields": [
       {
         "key": "TWINMIND_TOKEN",
@@ -924,27 +624,21 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "twinmind"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://app.twinmind.com",
-    "suggested": [
-      "twinmind"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "chat",
     "id": "syntx",
-    "name": "SYNTX.ai",
+    "name": "SYNTX",
     "color": "#B45309",
     "text": "SX",
     "site": "https://syntx.ai",
     "models": [
       "syntx"
     ],
-    "scraper": "bearer",
-    "auth": "session",
     "fields": [
       {
         "key": "SYNTX_TOKEN",
@@ -952,44 +646,584 @@
         "area": true
       }
     ],
-    "modelsArr": [
-      "syntx"
-    ],
-    "kind": "chat",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://syntx.ai",
-    "suggested": [
-      "syntx"
-    ]
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
   },
   {
+    "group": "web",
+    "auth": "session",
+    "kind": "media",
     "id": "veo",
     "name": "Veo Free",
     "color": "#EA4335",
-    "text": "V",
+    "text": "Ve",
     "site": "https://veoaifree.com",
     "models": [
-      "veo",
-      "veo-image"
+      "veo"
     ],
-    "scraper": "none",
-    "auth": "session",
     "fields": [
       {
         "key": "VEO_ENABLED",
-        "label": "Enabled 1/0"
+        "label": "Enabled (1/0)"
       }
     ],
-    "modelsArr": [
-      "veo",
-      "veo-image"
-    ],
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
+  },
+  {
+    "group": "web",
+    "auth": "session",
     "kind": "media",
-    "blurb": "Web session / cookie provider",
-    "keyUrl": "https://veoaifree.com",
-    "suggested": [
-      "veo",
-      "veo-image"
-    ]
+    "id": "pollinations",
+    "name": "Pollinations",
+    "color": "#F59E0B",
+    "text": "Po",
+    "site": "https://pollinations.ai",
+    "models": [
+      "pollinations"
+    ],
+    "fields": [
+      {
+        "key": "POLLINATIONS_COOKIE",
+        "label": "Cookie",
+        "area": true
+      }
+    ],
+    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "scraper": "cookie"
+  },
+  {
+    "group": "free",
+    "auth": "session",
+    "kind": "chat",
+    "id": "kiro",
+    "name": "Kiro AI",
+    "color": "#FF6B35",
+    "text": "Kr",
+    "site": "https://kiro.dev",
+    "models": [
+      "kiro",
+      "claude-sonnet-4.5",
+      "claude-haiku-4.5"
+    ],
+    "fields": [
+      {
+        "key": "KIRO_REFRESH_TOKEN",
+        "label": "Refresh token",
+        "area": true
+      },
+      {
+        "key": "KIRO_ACCESS_TOKEN",
+        "label": "Access token (optional)",
+        "area": true
+      },
+      {
+        "key": "KIRO_API_KEY",
+        "label": "API key (optional)"
+      }
+    ],
+    "blurb": "Kiro (AWS CodeWhisperer path). Prefer refresh token like 9router; access token auto-refreshes when possible."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "openrouter",
+    "name": "OpenRouter",
+    "color": "#6566F1",
+    "text": "OR",
+    "site": "https://openrouter.ai",
+    "models": [
+      "openrouter/auto"
+    ],
+    "envKey": "OPENROUTER_API_KEYS",
+    "fields": [
+      {
+        "key": "OPENROUTER_API_KEYS",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "mistral",
+    "name": "Mistral",
+    "color": "#F7D046",
+    "text": "M",
+    "site": "https://console.mistral.ai",
+    "models": [
+      "codestral"
+    ],
+    "envKey": "MISTRAL_API_KEYS",
+    "fields": [
+      {
+        "key": "MISTRAL_API_KEYS",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "nvidia",
+    "name": "NVIDIA NIM",
+    "color": "#76B900",
+    "text": "NV",
+    "site": "https://build.nvidia.com",
+    "models": [
+      "nvidia"
+    ],
+    "envKey": "NVIDIA_API_KEYS",
+    "fields": [
+      {
+        "key": "NVIDIA_API_KEYS",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "ollama",
+    "name": "Ollama Cloud",
+    "color": "#000",
+    "text": "Ol",
+    "site": "https://ollama.com",
+    "models": [
+      "ollama"
+    ],
+    "envKey": "OLLAMA_API_KEYS",
+    "fields": [
+      {
+        "key": "OLLAMA_API_KEYS",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "gemini",
+    "name": "Gemini API",
+    "color": "#4285F4",
+    "text": "Ge",
+    "site": "https://aistudio.google.com",
+    "models": [
+      "gemini"
+    ],
+    "envKey": "GEMINI_API_KEYS",
+    "fields": [
+      {
+        "key": "GEMINI_API_KEYS",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "cloudflare-ai",
+    "name": "Cloudflare Workers AI",
+    "color": "#F97316",
+    "text": "CF",
+    "site": "https://dash.cloudflare.com",
+    "models": [
+      "cloudflare"
+    ],
+    "envKey": "CF_API_TOKEN",
+    "fields": [
+      {
+        "key": "CF_API_TOKEN",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "agnes",
+    "name": "Agnes AI",
+    "color": "#EC4899",
+    "text": "Ag",
+    "site": "https://agnes-ai.com",
+    "models": [
+      "agnes"
+    ],
+    "envKey": "AGNES_API_KEYS",
+    "fields": [
+      {
+        "key": "AGNES_API_KEYS",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "api-airforce",
+    "name": "API.airforce",
+    "color": "#0EA5E9",
+    "text": "AF",
+    "site": "https://api.airforce",
+    "models": [
+      "api-airforce"
+    ],
+    "envKey": "API_AIRFORCE_KEYS",
+    "fields": [
+      {
+        "key": "API_AIRFORCE_KEYS",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "bazaarlink",
+    "name": "Bazaarlink",
+    "color": "#A855F7",
+    "text": "Bz",
+    "site": "https://bazaarlink.com",
+    "models": [
+      "bazaarlink"
+    ],
+    "envKey": "BAZAARLINK_API_KEYS",
+    "fields": [
+      {
+        "key": "BAZAARLINK_API_KEYS",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "kilo-gateway",
+    "name": "Kilo Gateway",
+    "color": "#14B8A6",
+    "text": "Kg",
+    "site": "https://kilo.ai",
+    "models": [
+      "kilo-gateway"
+    ],
+    "envKey": "KILO_API_KEYS",
+    "fields": [
+      {
+        "key": "KILO_API_KEYS",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "poolside",
+    "name": "Poolside",
+    "color": "#6366F1",
+    "text": "Ps",
+    "site": "https://poolside.ai",
+    "models": [
+      "poolside"
+    ],
+    "envKey": "POOLSIDE_API_KEYS",
+    "fields": [
+      {
+        "key": "POOLSIDE_API_KEYS",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "kimchi",
+    "name": "Kimchi",
+    "color": "#EF4444",
+    "text": "Kc",
+    "site": "https://kimchi.ai",
+    "models": [
+      "kimchi"
+    ],
+    "envKey": "KIMCHI_API_KEYS",
+    "fields": [
+      {
+        "key": "KIMCHI_API_KEYS",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "byteplus",
+    "name": "BytePlus ModelArk",
+    "color": "#FF3E00",
+    "text": "Bp",
+    "site": "https://www.byteplus.com",
+    "models": [
+      "byteplus"
+    ],
+    "envKey": "BYTEPLUS_API_KEYS",
+    "fields": [
+      {
+        "key": "BYTEPLUS_API_KEYS",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "mimo-free",
+    "name": "MiMo Code Free",
+    "color": "#F59E0B",
+    "text": "Mm",
+    "site": "https://mimo.ai",
+    "models": [
+      "mimo-free"
+    ],
+    "envKey": "MIMO_API_KEYS",
+    "fields": [
+      {
+        "key": "MIMO_API_KEYS",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "longcat",
+    "name": "LongCat",
+    "color": "#06B6D4",
+    "text": "LC",
+    "site": "https://longcat.chat",
+    "models": [
+      "longcat"
+    ],
+    "envKey": "LONGCAT_API_KEY",
+    "fields": [
+      {
+        "key": "LONGCAT_API_KEY",
+        "label": "API key(s)",
+        "area": true
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "auth": "apikey",
+    "kind": "chat",
+    "id": "opencode",
+    "name": "OpenCode Free",
+    "color": "#E87040",
+    "text": "OC",
+    "site": "https://opencode.ai",
+    "models": [
+      "opencode"
+    ],
+    "envKey": "OPENCODE_ENABLED",
+    "fields": [
+      {
+        "key": "OPENCODE_ENABLED",
+        "label": "Enabled (1/0)",
+        "area": false
+      }
+    ],
+    "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
+  },
+  {
+    "group": "free",
+    "kind": "chat",
+    "id": "searxng",
+    "name": "SearXNG",
+    "color": "#3B82F6",
+    "text": "SX",
+    "site": "https://searxng.org",
+    "models": [
+      "searxng"
+    ],
+    "auth": "none",
+    "fields": [],
+    "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
+  },
+  {
+    "group": "free",
+    "kind": "chat",
+    "id": "edge-tts",
+    "name": "Edge TTS",
+    "color": "#00A4EF",
+    "text": "Et",
+    "site": "https://azure.microsoft.com",
+    "models": [
+      "edge-tts"
+    ],
+    "auth": "none",
+    "fields": [],
+    "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
+  },
+  {
+    "group": "free",
+    "kind": "chat",
+    "id": "google-tts",
+    "name": "Google TTS",
+    "color": "#EA4335",
+    "text": "Gt",
+    "site": "https://cloud.google.com/text-to-speech",
+    "models": [
+      "google-tts"
+    ],
+    "auth": "none",
+    "fields": [],
+    "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
+  },
+  {
+    "group": "free",
+    "kind": "chat",
+    "id": "coqui",
+    "name": "Coqui TTS",
+    "color": "#7C3AED",
+    "text": "Cq",
+    "site": "https://coqui.ai",
+    "models": [
+      "coqui"
+    ],
+    "auth": "none",
+    "fields": [],
+    "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
+  },
+  {
+    "group": "free",
+    "kind": "chat",
+    "id": "tortoise",
+    "name": "Tortoise TTS",
+    "color": "#64748B",
+    "text": "Tt",
+    "site": "https://github.com/neonbjb/tortoise-tts",
+    "models": [
+      "tortoise"
+    ],
+    "auth": "none",
+    "fields": [],
+    "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
+  },
+  {
+    "group": "free",
+    "kind": "chat",
+    "id": "local-device",
+    "name": "Local Device",
+    "color": "#22C55E",
+    "text": "Ld",
+    "site": "http://localhost",
+    "models": [
+      "local-device"
+    ],
+    "auth": "none",
+    "fields": [],
+    "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
+  },
+  {
+    "group": "free",
+    "kind": "chat",
+    "id": "devin-cli",
+    "name": "Devin CLI",
+    "color": "#111",
+    "text": "Dv",
+    "site": "https://devin.ai",
+    "models": [
+      "devin-cli"
+    ],
+    "auth": "none",
+    "fields": [],
+    "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
+  },
+  {
+    "group": "free",
+    "kind": "chat",
+    "id": "gemini-cli",
+    "name": "Gemini CLI",
+    "color": "#4285F4",
+    "text": "Gc",
+    "site": "https://github.com/google-gemini",
+    "models": [
+      "gemini-cli"
+    ],
+    "auth": "none",
+    "fields": [],
+    "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
+  },
+  {
+    "group": "free",
+    "kind": "chat",
+    "id": "nous",
+    "name": "Nous Research",
+    "color": "#8B5CF6",
+    "text": "Nr",
+    "site": "https://nousresearch.com",
+    "models": [
+      "nous"
+    ],
+    "auth": "none",
+    "fields": [],
+    "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
+  },
+  {
+    "group": "free",
+    "kind": "chat",
+    "id": "vertex",
+    "name": "Vertex AI",
+    "color": "#4285F4",
+    "text": "Vx",
+    "site": "https://cloud.google.com/vertex-ai",
+    "models": [
+      "vertex"
+    ],
+    "auth": "none",
+    "fields": [],
+    "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
   }
 ]

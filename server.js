@@ -61,6 +61,8 @@ const hyperagentProxy = load('./providers/hyperagent-proxy');
 const conolProxy = load('./providers/conol-proxy');
 const twinmindProxy = load('./providers/twinmind-proxy');
 const syntxProxy = load('./providers/syntx-proxy');
+const genericOpenaiProxy = load('./providers/generic-openai-proxy');
+const kiroProxy = load('./providers/kiro-proxy');
 
 
 
@@ -106,6 +108,8 @@ function routeProxy(model) {
   if ((m.startsWith('conol')) && conolProxy) return conolProxy;
   if ((m.startsWith('twinmind') || m.startsWith('twin-mind')) && twinmindProxy) return twinmindProxy;
   if ((m.startsWith('syntx')) && syntxProxy) return syntxProxy;
+  if ((m.startsWith('kiro') || m.startsWith('claude-sonnet-4.5') || m.startsWith('claude-haiku-4.5')) && kiroProxy) return kiroProxy;
+  if (genericOpenaiProxy && genericOpenaiProxy.resolveTarget && genericOpenaiProxy.resolveTarget(m)) return genericOpenaiProxy;
 
 
 
@@ -189,6 +193,8 @@ function collectModels() {
   add(conolProxy, 'conol');
   add(twinmindProxy, 'twinmind');
   add(syntxProxy, 'syntx');
+  add(kiroProxy, 'kiro');
+  add(genericOpenaiProxy, 'generic');
   return models;
 }
 

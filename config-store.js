@@ -72,6 +72,24 @@ const KEYS = [
   'TWINMIND_JWT',
   'SYNTX_TOKEN',
   'SYNTX_JWT',
+  'CUSTOM_ENDPOINTS',
+  'KIRO_ACCESS_TOKEN',
+  'KIRO_REFRESH_TOKEN',
+  'KIRO_API_KEY',
+  'KIRO_OPENAI_BASE',
+  'OPENROUTER_API_KEYS',
+  'OPENROUTER_API_KEY',
+  'NVIDIA_API_KEYS',
+  'OLLAMA_API_KEYS',
+  'GEMINI_API_KEYS',
+  'AGNES_API_KEYS',
+  'API_AIRFORCE_KEYS',
+  'BAZAARLINK_API_KEYS',
+  'KILO_API_KEYS',
+  'POOLSIDE_API_KEYS',
+  'KIMCHI_API_KEYS',
+  'BYTEPLUS_API_KEYS',
+  'MIMO_API_KEYS',
   'PROVIDER_CONNECTIONS',
 ];
 
@@ -268,6 +286,8 @@ function getPublicProviders() {
     conol: !!process.env.CONOL_COOKIE,
     twinmind: !!(process.env.TWINMIND_TOKEN || process.env.TWINMIND_JWT),
     syntx: !!(process.env.SYNTX_TOKEN || process.env.SYNTX_JWT),
+    openrouter: !!(process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_API_KEYS),
+    kiro: !!(process.env.KIRO_ACCESS_TOKEN || process.env.KIRO_REFRESH_TOKEN || process.env.KIRO_API_KEY),
     redis: redisConfigured(),
   };
 }
