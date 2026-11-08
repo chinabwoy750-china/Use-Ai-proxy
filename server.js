@@ -109,7 +109,7 @@ function routeProxy(model) {
   if ((m.startsWith('conol')) && conolProxy) return conolProxy;
   if ((m.startsWith('twinmind') || m.startsWith('twin-mind')) && twinmindProxy) return twinmindProxy;
   if ((m.startsWith('syntx')) && syntxProxy) return syntxProxy;
-  if ((m.startsWith('kiro') || m.startsWith('claude-sonnet-4.5') || m.startsWith('claude-haiku-4.5')) && kiroProxy) return kiroProxy;
+  if (kiroProxy && (m === 'kiro' || m.startsWith('kiro/') || m.startsWith('kiro-') || m.startsWith('claude-opus-') || m.startsWith('claude-sonnet-') || m.startsWith('claude-haiku-') || m.startsWith('gpt-5.6-'))) return kiroProxy;
   if (genericOpenaiProxy && genericOpenaiProxy.resolveTarget && genericOpenaiProxy.resolveTarget(m)) return genericOpenaiProxy;
 
 
@@ -332,6 +332,15 @@ const server = http.createServer(async (req, res) => {
 
     
     
+    
+    if (pathname === '/api/providers/kiro/models' && req.method === 'GET') {
+      const ids = (kiroProxy && kiroProxy.KIRO_MODEL_IDS) || [];
+      const data = [{ id: 'kiro', object: 'model', owned_by: 'kiro' }].concat(
+        ids.map((id) => ({ id: 'kiro/' + id, object: 'model', owned_by: 'kiro' }))
+      ).concat(ids.map((id) => ({ id, object: 'model', owned_by: 'kiro' })));
+      return sendJson(res, 200, { object: 'list', data });
+    }
+
     if (pathname === '/api/oauth/kiro/device/start' && req.method === 'POST') {
       const auth = config.checkAdminAuth(req);
       if (!auth.ok) return sendJson(res, 401, { error: auth.reason });

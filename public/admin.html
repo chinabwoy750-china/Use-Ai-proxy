@@ -225,6 +225,7 @@ async function persistAccounts(p, accounts){
     // session: use first account values (active), still store multi in connections
     const active=accounts[0];
     if(active && active.values){
+      for(const [k,v] of Object.entries(active.values)){ if(v) body[k]=v; }
       for(const f of fields){ if(active.values[f.key]) body[f.key]=active.values[f.key]; }
     }
   }
@@ -465,12 +466,22 @@ function wireAccountModal(p,fields,accounts){
 async function loadEndpointModels(p){
   importModelsState={loading:true,items:[],selected:new Set()}; importModelsOpen=true; render();
   try{
-    const j=await fetch('/v1/models').then(r=>r.json());
-    const data=Array.isArray(j.data)?j.data:[];
-    const id=p.id.toLowerCase();
-    let items=data.filter(x=>String(x.id||'').toLowerCase().includes(id));
-    if(!items.length) items=data;
-    importModelsState={loading:false,items,selected:new Set()};
+    let data=[];
+    if(p.id==='kiro'){
+      const j=await fetch('/api/providers/kiro/models').then(r=>r.json());
+      data=Array.isArray(j.data)?j.data:[];
+    } else {
+      const j=await fetch('/v1/models').then(r=>r.json());
+      data=Array.isArray(j.data)?j.data:[];
+      const id=p.id.toLowerCase();
+      const filtered=data.filter(x=>String(x.id||'').toLowerCase().includes(id));
+      if(filtered.length) data=filtered;
+    }
+    // also merge catalog models
+    for(const m of (p.models||[])){
+      if(!data.some(x=>(x.id||x)===m)) data.push({id:m});
+    }
+    importModelsState={loading:false,items:data,selected:new Set()};
   }catch(e){importModelsState={loading:false,items:[],selected:new Set(),error:e.message}}
   render();
 }
