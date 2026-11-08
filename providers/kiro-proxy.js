@@ -1,5 +1,6 @@
 'use strict';
 const { makeProxy, lastUserText, readSseOpenAI } = require('../web-kit');
+const kiroOauth = require('../kiro-oauth');
 
 const REFRESH_URL = process.env.KIRO_REFRESH_URL || 'https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken';
 const BASES = (
@@ -32,7 +33,13 @@ module.exports = makeProxy({
     const refresh = process.env.KIRO_REFRESH_TOKEN || '';
     const apiKey = process.env.KIRO_API_KEY || '';
     if (!access && refresh) {
-      access = await refreshAccess(refresh);
+      try {
+        const tok = await kiroOauth.refreshSocial(refresh);
+        access = tok.accessToken;
+        if (tok.refreshToken) process.env.KIRO_REFRESH_TOKEN = tok.refreshToken;
+      } catch (e) {
+        access = await refreshAccess(refresh);
+      }
       process.env.KIRO_ACCESS_TOKEN = access;
     }
     if (!access && !apiKey) throw new Error('KIRO_ACCESS_TOKEN / KIRO_REFRESH_TOKEN or KIRO_API_KEY required');

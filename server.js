@@ -63,6 +63,7 @@ const twinmindProxy = load('./providers/twinmind-proxy');
 const syntxProxy = load('./providers/syntx-proxy');
 const genericOpenaiProxy = load('./providers/generic-openai-proxy');
 const kiroProxy = load('./providers/kiro-proxy');
+const kiroOauth = require('./kiro-oauth');
 
 
 
@@ -330,6 +331,60 @@ const server = http.createServer(async (req, res) => {
     }
 
     
+    
+    if (pathname === '/api/oauth/kiro/device/start' && req.method === 'POST') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason });
+      try {
+        const raw = await readBody(req);
+        let body = {};
+        try { body = JSON.parse(raw || '{}'); } catch {}
+        const out = await kiroOauth.startDevice(body.method || 'builder-id');
+        return sendJson(res, 200, { ok: true, ...out });
+      } catch (e) {
+        return sendJson(res, 500, { error: e.message || String(e) });
+      }
+    }
+
+    if (pathname === '/api/oauth/kiro/device/poll' && req.method === 'POST') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason });
+      try {
+        const raw = await readBody(req);
+        const body = JSON.parse(raw || '{}');
+        const out = await kiroOauth.pollDevice(body.sessionId);
+        return sendJson(res, 200, { ok: true, ...out });
+      } catch (e) {
+        return sendJson(res, 500, { error: e.message || String(e) });
+      }
+    }
+
+    if (pathname === '/api/oauth/kiro/social/start' && req.method === 'POST') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason });
+      try {
+        const raw = await readBody(req);
+        const body = JSON.parse(raw || '{}');
+        const out = kiroOauth.startSocial(body.provider || 'google');
+        return sendJson(res, 200, { ok: true, ...out });
+      } catch (e) {
+        return sendJson(res, 500, { error: e.message || String(e) });
+      }
+    }
+
+    if (pathname === '/api/oauth/kiro/social/exchange' && req.method === 'POST') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason });
+      try {
+        const raw = await readBody(req);
+        const body = JSON.parse(raw || '{}');
+        const tokens = await kiroOauth.exchangeSocial(body.sessionId, body.callbackUrl || body.url);
+        return sendJson(res, 200, { ok: true, tokens });
+      } catch (e) {
+        return sendJson(res, 500, { error: e.message || String(e) });
+      }
+    }
+
     if (pathname === '/api/browser-login/status' && req.method === 'GET') {
       const worker = !!(process.env.BROWSER_WORKER_URL || process.env.CHROME_PATH || process.env.PLAYWRIGHT_CHROMIUM);
       return sendJson(res, 200, {

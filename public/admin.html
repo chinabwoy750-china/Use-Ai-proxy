@@ -321,8 +321,19 @@ function renderDetail(){
           <button class="switch ${rr?'on':''}" id="rr" type="button"><i></i></button></div>
         </div>
         <p class="muted" style="margin:0 0 12px;font-size:12px">One place for credentials — fields are customized for <b>${p.name}</b> (${fields.map(f=>f.label).join(', ')}).</p>
+        ${p.id==='kiro' ? `<div style="margin-bottom:14px;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)">
+          <div style="font-weight:650;margin-bottom:8px">OAuth (9router-style)</div>
+          <p class="muted" style="font-size:12px;margin:0 0 10px">Kiro uses OAuth — not a plain API key. Choose a method:</p>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+            <button class="btn blue" id="kiroGoogle" type="button">Google</button>
+            <button class="btn blue" id="kiroGithub" type="button">GitHub</button>
+            <button class="btn ghost" id="kiroBuilder" type="button">AWS Builder ID</button>
+          </div>
+          <div id="kiroOauthPanel" class="muted" style="font-size:12px"></div>
+        </div>` : ''}
         ${connHtml}
         <button class="btn primary" id="addAcc" style="margin-top:8px;display:inline-flex;align-items:center;justify-content:center;gap:6px">${ICO.plus} Add account</button>
+        ${p.id==='kiro' ? `<p class="muted" style="font-size:11px;margin-top:8px">Or manually add an account with refresh/access tokens (Import).</p>` : ''}
       </div>
       <div class="card">
         <h2>Models</h2>
@@ -340,6 +351,65 @@ function renderDetail(){
   document.getElementById('back').onclick=()=>{view.page='list';render()};
   document.getElementById('rr').onclick=async()=>{await saveConn(p.id,{roundRobin:!rr,accounts});toast('Round robin updated');render()};
   document.getElementById('addAcc').onclick=()=>{modal={mode:'add'};render()};
+  if (p.id === 'kiro') {
+    const panel = document.getElementById('kiroOauthPanel');
+    const saveKiroTokens = async (tokens, name) => {
+      const values = {
+        KIRO_ACCESS_TOKEN: tokens.accessToken || '',
+        KIRO_REFRESH_TOKEN: tokens.refreshToken || '',
+      };
+      if (tokens.clientId) values.KIRO_CLIENT_ID = tokens.clientId;
+      if (tokens.clientSecret) values.KIRO_CLIENT_SECRET = tokens.clientSecret;
+      const next = [...accountsOf(p), { name: name || ('Kiro ' + (tokens.authMethod || 'oauth')), values, key: values.KIRO_REFRESH_TOKEN || values.KIRO_ACCESS_TOKEN }];
+      await persistAccounts(p, next);
+      toast('Kiro account added');
+      render();
+    };
+    const startSocial = async (provider) => {
+      panel.innerHTML = 'Starting ' + provider + ' login…';
+      try {
+        const j = await api('/api/oauth/kiro/social/start', { method: 'POST', body: JSON.stringify({ provider }) });
+        panel.innerHTML = `<p>1. Open login: <a href="${j.authUrl}" target="_blank" rel="noopener">Authorize with ${provider}</a></p>
+          <p>2. After login, copy the full <code>kiro://…</code> URL from the address bar (page may look broken — that is normal).</p>
+          <label class="lbl">Paste kiro:// callback URL</label>
+          <textarea id="kiroCb" placeholder="kiro://kiro.kiroAgent/authenticate-success?code=…&state=…"></textarea>
+          <button class="btn primary" id="kiroEx" style="margin-top:8px">Exchange code</button>`;
+        document.getElementById('kiroEx').onclick = async () => {
+          const callbackUrl = document.getElementById('kiroCb').value.trim();
+          if (!callbackUrl) return toast('Paste callback URL');
+          panel.innerHTML = 'Exchanging…';
+          try {
+            const out = await api('/api/oauth/kiro/social/exchange', { method: 'POST', body: JSON.stringify({ sessionId: j.sessionId, callbackUrl }) });
+            await saveKiroTokens(out.tokens, 'Kiro ' + provider);
+          } catch (e) { panel.innerHTML = '<span style="color:#fca5a5">' + e.message + '</span>'; toast(e.message); }
+        };
+      } catch (e) { panel.innerHTML = e.message; toast(e.message); }
+    };
+    const g = document.getElementById('kiroGoogle');
+    const gh = document.getElementById('kiroGithub');
+    const b = document.getElementById('kiroBuilder');
+    if (g) g.onclick = () => startSocial('google');
+    if (gh) gh.onclick = () => startSocial('github');
+    if (b) b.onclick = async () => {
+      panel.innerHTML = 'Starting AWS Builder ID device login…';
+      try {
+        const j = await api('/api/oauth/kiro/device/start', { method: 'POST', body: JSON.stringify({ method: 'builder-id' }) });
+        panel.innerHTML = `<p>Open <a href="${j.verificationUriComplete || j.verificationUri}" target="_blank" rel="noopener">AWS verification</a></p>
+          <p>Code: <code style="font-size:16px">${j.userCode}</code></p>
+          <p class="muted">Waiting for approval…</p>`;
+        const tick = async () => {
+          try {
+            const pol = await api('/api/oauth/kiro/device/poll', { method: 'POST', body: JSON.stringify({ sessionId: j.sessionId }) });
+            if (pol.pending) { setTimeout(tick, (j.interval || 5) * 1000); return; }
+            if (pol.tokens) { await saveKiroTokens(pol.tokens, 'Kiro Builder ID'); return; }
+            panel.innerHTML = '<span style="color:#fca5a5">' + (pol.errorDescription || pol.error || 'failed') + '</span>';
+          } catch (e) { panel.innerHTML = e.message; }
+        };
+        setTimeout(tick, (j.interval || 5) * 1000);
+      } catch (e) { panel.innerHTML = e.message; toast(e.message); }
+    };
+  }
+
   document.getElementById('btnCopy').onclick=async()=>{
     const kind=SCRAPER_KIND[p.id]||'cookie';
     await copyText(`// ${p.name} · paste on ${p.site||'provider site'} console\\n`+(SCRIPTS[kind]||SCRIPTS.cookie));
