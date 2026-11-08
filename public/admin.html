@@ -358,6 +358,7 @@ function renderDetail(){
       if (tokens.clientId) values.KIRO_CLIENT_ID = tokens.clientId;
       if (tokens.clientSecret) values.KIRO_CLIENT_SECRET = tokens.clientSecret;
       if (tokens.authMethod) values.KIRO_AUTH_METHOD = tokens.authMethod;
+      if (tokens.profileArn) values.KIRO_PROFILE_ARN = tokens.profileArn;
       const next = [...accountsOf(p), { name: name || ('Kiro ' + (tokens.authMethod || 'oauth')), values, key: values.KIRO_REFRESH_TOKEN || values.KIRO_ACCESS_TOKEN }];
       await persistAccounts(p, next);
       toast('Kiro account added');

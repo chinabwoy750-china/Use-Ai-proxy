@@ -19,6 +19,44 @@ const SCOPES = [
 const GRANT_TYPES = ['urn:ietf:params:oauth:grant-type:device_code', 'refresh_token'];
 const ISSUER = 'https://identitycenter.amazonaws.com/ssoins-722374e8c3c8e6c6';
 
+
+async function fetchProfileArn(accessToken) {
+  if (!accessToken) return null;
+  try {
+    const r = await fetch('https://codewhisperer.us-east-1.amazonaws.com/ListAvailableProfiles', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: 'Bearer ' + accessToken,
+      },
+      body: JSON.stringify({ maxResults: 10 }),
+    });
+    if (!r.ok) {
+      // x-amz-target style
+      const r2 = await fetch('https://codewhisperer.us-east-1.amazonaws.com', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-amz-json-1.0',
+          'x-amz-target': 'AmazonCodeWhispererService.ListAvailableProfiles',
+          Authorization: 'Bearer ' + accessToken,
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ maxResults: 10 }),
+      });
+      if (!r2.ok) return null;
+      const d2 = await r2.json();
+      const profiles = Array.isArray(d2.profiles) ? d2.profiles : [];
+      return (profiles.find((p) => p.arn) || profiles[0] || {}).arn || null;
+    }
+    const data = await r.json();
+    const profiles = Array.isArray(data.profiles) ? data.profiles : [];
+    return (profiles.find((p) => p.arn) || profiles[0] || {}).arn || null;
+  } catch {
+    return null;
+  }
+}
+
 /** In-memory OAuth sessions (device + social PKCE) */
 const sessions = new Map();
 
@@ -103,6 +141,7 @@ async function pollDevice(sessionId) {
     };
   }
   sessions.delete(sessionId);
+  const profileArn = await fetchProfileArn(data.accessToken);
   return {
     pending: false,
     tokens: {
@@ -112,6 +151,7 @@ async function pollDevice(sessionId) {
       clientId: s.clientId,
       clientSecret: s.clientSecret,
       authMethod: 'builder-id',
+      profileArn,
     },
   };
 }
@@ -165,10 +205,12 @@ async function exchangeSocial(sessionId, callbackUrl) {
   if (!r.ok) throw new Error('Social token exchange failed: ' + (await r.text()).slice(0, 220));
   const data = await r.json();
   sessions.delete(sessionId);
+  let profileArn = data.profileArn || null;
+  if (!profileArn) profileArn = await fetchProfileArn(data.accessToken);
   return {
     accessToken: data.accessToken,
     refreshToken: data.refreshToken,
-    profileArn: data.profileArn,
+    profileArn,
     expiresIn: data.expiresIn || 3600,
     authMethod: s.provider === 'Github' ? 'github' : 'google',
   };
@@ -203,5 +245,6 @@ module.exports = {
   startSocial,
   exchangeSocial,
   refreshSocial,
+  fetchProfileArn,
   REDIRECT_URI,
 };

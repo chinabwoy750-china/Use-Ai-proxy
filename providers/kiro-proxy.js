@@ -1,12 +1,13 @@
 'use strict';
 const { makeProxy, lastUserText, readSseOpenAI } = require('../web-kit');
 const connections = require('../connection-store');
+const kiroOauth = require('../kiro-oauth');
 
 const REFRESH_URL = process.env.KIRO_REFRESH_URL || 'https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken';
 const OIDC_TOKEN = 'https://oidc.us-east-1.amazonaws.com/token';
 const BASES = (
   process.env.KIRO_BASES ||
-  'https://runtime.us-east-1.kiro.dev/generateAssistantResponse'
+  'https://q.us-east-1.amazonaws.com/generateAssistantResponse,https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse,https://runtime.us-east-1.kiro.dev/generateAssistantResponse'
 ).split(',').map((s) => s.trim()).filter(Boolean);
 
 const KIRO_MODEL_IDS = [
@@ -51,6 +52,7 @@ function loadCreds() {
     clientId: v.KIRO_CLIENT_ID || process.env.KIRO_CLIENT_ID || '',
     clientSecret: v.KIRO_CLIENT_SECRET || process.env.KIRO_CLIENT_SECRET || '',
     authMethod: v.KIRO_AUTH_METHOD || process.env.KIRO_AUTH_METHOD || '',
+    profileArn: v.KIRO_PROFILE_ARN || process.env.KIRO_PROFILE_ARN || '',
     accounts,
   };
 }
@@ -155,6 +157,16 @@ const proxy = makeProxy({
     }
 
     const token = access || apiKey;
+    let profileArn = creds.profileArn || '';
+    if (!profileArn && access && !apiKey) {
+      try {
+        profileArn = (await kiroOauth.fetchProfileArn(access)) || '';
+        if (profileArn) persistCredsPatch({ KIRO_PROFILE_ARN: profileArn });
+      } catch {}
+    }
+    if (!profileArn && !apiKey) {
+      throw new Error('Kiro profileArn is required — re-login with Builder ID/Google so profile can be resolved, or set KIRO_PROFILE_ARN');
+    }
     const prompt = lastUserText(ctx.opts.messages);
     const modelId = upstreamModelId(ctx.opts.model);
 
@@ -178,42 +190,53 @@ const proxy = makeProxy({
       return;
     }
 
-    const base = BASES[0];
-    const r = await fetch(base, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        Authorization: 'Bearer ' + token,
-        'x-amz-sso-bearer': token,
-        'x-amzn-kiro-agent-mode': 'spec',
-        'User-Agent': 'AWS-SDK-JS/3.0.0 kiro-ide/1.0.0',
-      },
-      body: JSON.stringify({
-        conversationState: {
-          currentMessage: {
-            userInputMessage: {
-              content: prompt,
-              modelId,
-            },
-          },
-          chatTriggerType: 'MANUAL',
+    let lastErr = '';
+    let content = '';
+    let ok = false;
+    for (const base of BASES) {
+      const r = await fetch(base, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: 'Bearer ' + token,
+          'x-amz-sso-bearer': token,
+          'x-amzn-kiro-agent-mode': 'spec',
+          'User-Agent': 'AWS-SDK-JS/3.0.0 kiro-ide/1.0.0',
+          ...(profileArn ? { 'x-amzn-codewhisperer-profile-arn': profileArn } : {}),
         },
-      }),
-    });
-    const text = await r.text();
-    if (!r.ok) {
-      if ((r.status === 401 || r.status === 403) && creds.refresh) {
-        await refreshAccess(loadCreds());
-        throw new Error('Kiro auth expired and was refreshed — retry the request');
+        body: JSON.stringify({
+          conversationState: {
+            currentMessage: {
+              userInputMessage: {
+                content: prompt,
+                modelId,
+              },
+            },
+            chatTriggerType: 'MANUAL',
+          },
+          profileArn: profileArn || undefined,
+        }),
+      });
+      const text = await r.text();
+      if (!r.ok) {
+        lastErr = 'Kiro ' + r.status + ' @ ' + base + ': ' + text.slice(0, 200);
+        if ((r.status === 401 || r.status === 403) && creds.refresh) {
+          try {
+            await refreshAccess(loadCreds());
+          } catch {}
+        }
+        continue;
       }
-      throw new Error('Kiro ' + r.status + ': ' + text.slice(0, 240));
+      content = text;
+      try {
+        const j = JSON.parse(text);
+        content = j.completion || j.output || j.message || JSON.stringify(j).slice(0, 500);
+      } catch {}
+      ok = true;
+      break;
     }
-    let content = text;
-    try {
-      const j = JSON.parse(text);
-      content = j.completion || j.output || j.message || JSON.stringify(j).slice(0, 500);
-    } catch {}
+    if (!ok) throw new Error(lastErr || 'Kiro all endpoints failed');
     ctx.write(String(content));
     ctx.end();
   },
