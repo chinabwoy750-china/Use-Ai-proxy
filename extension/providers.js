@@ -34,10 +34,19 @@ const EXT_PROVIDERS = [
     id: 'perplexity',
     name: 'Perplexity',
     match: [/perplexity\.ai/],
-    cookieDomains: ['.perplexity.ai', 'www.perplexity.ai'],
-    cookieNames: ['__Secure-next-auth.session-token', 'next-auth.session-token'],
+    cookieDomains: ['.perplexity.ai', 'www.perplexity.ai', '.www.perplexity.ai'],
+    // IMPORTANT: do NOT filter to session-token only — Cloudflare needs cf_clearance / __cf_bm too
+    cookieNames: null,
+    requireAnyCookie: ['__Secure-next-auth.session-token', 'next-auth.session-token'],
     localKeys: [],
-    build(ctx) { return { PERPLEXITY_COOKIE: ctx.cookieHeader }; },
+    build(ctx) {
+      const names = (ctx.cookies || []).map((c) => c.name);
+      const hasSession = names.some((n) => /session-token/i.test(n));
+      if (!hasSession) {
+        throw new Error('Missing __Secure-next-auth.session-token — log in on perplexity.ai first');
+      }
+      return { PERPLEXITY_COOKIE: ctx.cookieHeader };
+    },
   },
   {
     id: 'grok',

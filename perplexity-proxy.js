@@ -201,6 +201,7 @@ async function handle(opts, res) {
     if (!r.ok) {
       const bodyText = await r.text().catch(() => '');
       if (r.status === 403 && isCloudflareHtml(bodyText)) {
+        // Common on Render/datacenter IPs even with valid session + cf_clearance
         throw new Error(
           'Perplexity 403 Cloudflare challenge — session cookie missing/expired, or Render IP blocked. ' +
             'Copy FULL cookies including HttpOnly __Secure-next-auth.session-token from Application → Cookies (not document.cookie).'

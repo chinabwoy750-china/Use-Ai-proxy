@@ -85,18 +85,27 @@ async function captureAndSend({ proxyUrl, password, providerId, accountName }) {
   if (!provider) throw new Error('Open a supported provider site tab first (DeepSeek, Kimi, …)');
 
   const cookies = await getCookiesForDomains(provider.cookieDomains || []);
-  if (provider.cookieNames) {
+  if (provider.requireAnyCookie && provider.requireAnyCookie.length) {
+    const has = provider.requireAnyCookie.some((n) => cookies.some((c) => c.name === n));
+    if (!has) {
+      throw new Error('Required cookie missing (' + provider.requireAnyCookie.join(' or ') + ') — log in fully first');
+    }
+  } else if (provider.cookieNames) {
     const has = provider.cookieNames.some((n) => cookies.some((c) => c.name === n));
     if (!has && cookies.length === 0) {
       throw new Error('No cookies found — log in on this tab first');
     }
   }
+  if (!cookies.length) {
+    throw new Error('No cookies found — log in on this tab first');
+  }
 
   const store = await readTabLocal(tab.id, provider.localKeys || []);
+  // Always prefer FULL jar for CF sites; optional cookieNames only filters when set
   const ctx = {
     url: tab.url,
     cookies,
-    cookieHeader: cookieHeader(cookies, provider.cookieNames),
+    cookieHeader: cookieHeader(cookies, provider.cookieNames || null),
     local: store.local || {},
     bearer: store.bearer || '',
   };
