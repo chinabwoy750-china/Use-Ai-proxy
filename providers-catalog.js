@@ -220,8 +220,6 @@ function scraperFor(provider) {
 }
 
 
-const ICON_LINKS_PATH = path.join(ICONS_DIR, 'links.json');
-
 function listIconLinks() {
   const fromDisk = {};
   try {
