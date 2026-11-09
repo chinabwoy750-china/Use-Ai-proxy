@@ -1,29 +1,28 @@
-# Use-AI Proxy Capture (browser extension)
+# Use-AI Proxy Capture
 
-Captures **logged-in cookies** (including **HttpOnly**) and tokens from provider sites, then POSTs them to your proxy:
+Captures **HttpOnly cookies** + tokens from **all web-session providers** and POSTs to:
 
 `POST /api/extension/import`
 
-## Install (Chrome / Edge / Brave)
+## Covered (web session)
 
-1. Open `chrome://extensions`
-2. Enable **Developer mode**
-3. **Load unpacked** → select this `extension/` folder
-4. Pin the extension
+DeepSeek, Kimi, Perplexity, Grok, UC, Hugging Face, Poe, Z.ai, Venice, NoTrack, t3, Arena, ZenMux, Blackbox, Doubao, Yuanbao, AI Studio, v0, Notion, Meta AI, MaxAI, Inner, Adapta, TinyCMS, PromptQL, HyperAgent, Conol, Twinmind, SYNTX, Pollinations
+
+## Not via extension
+
+| Provider | Use instead |
+|----------|-------------|
+| **Kiro** | Admin → OAuth (Builder ID / Google / GitHub) |
+| **API key** (Mistral, OpenRouter, NVIDIA, …) | Admin → Add account → paste key |
+| **Veo** | Admin flag `VEO_ENABLED` |
+
+## Install
+
+Chrome: `chrome://extensions` → Developer mode → **Load unpacked** → this folder.
 
 ## Use
 
-1. Click the extension → set **Proxy URL** (`https://myproxy-use.onrender.com`) and **Admin password**
-2. Open a provider site and **log in** (DeepSeek, Kimi, Perplexity, …)
-3. Click **Capture & send**
-4. Check `/admin` — a new account should appear under that provider
-
-## Firefox
-
-`about:debugging` → This Firefox → Load Temporary Add-on → pick `manifest.json`
-
-## Security
-
-- Password is stored in `chrome.storage.sync` on your browser only
-- Only send to **your** proxy URL
-- Extension needs cookie access to read HttpOnly session cookies
+1. Set Proxy URL + Admin password in the popup  
+2. Open provider site → log in  
+3. **Capture & send**  
+4. Check `/admin`
