@@ -22,34 +22,97 @@ try {
  *   DEEPSEEK_COOKIE — single cookie OR use ||| between accounts (cookies contain commas)
  *   Or DEEPSEEK_ACCOUNTS="token1|cookie1\ntoken2|cookie2"
  */
+function unwrapToken(raw) {
+  let t = String(raw || '').trim().replace(/^Bearer\s+/i, '');
+  if (!t) return '';
+  // localStorage sometimes stores {"value":"actualToken"} or JSON-quoted strings
+  if (t.startsWith('{') || t.startsWith('"')) {
+    try {
+      const j = JSON.parse(t);
+      if (typeof j === 'string') t = j;
+      else if (j && typeof j === 'object') {
+        t = j.value || j.token || j.userToken || j.access_token || j.accessToken || t;
+      }
+    } catch (_) {}
+  }
+  return String(t || '').trim().replace(/^Bearer\s+/i, '');
+}
+
 function loadAccounts() {
   const accounts = [];
+  // 1) Admin / extension multi-accounts in PROVIDER_CONNECTIONS
+  try {
+    const all = JSON.parse(process.env.PROVIDER_CONNECTIONS || '{}');
+    const entry = all.deepseek || {};
+    const list = Array.isArray(entry.accounts) ? entry.accounts : [];
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i] || {};
+      const v = a.values || {};
+      const token = unwrapToken(v.DEEPSEEK_TOKEN || a.key || '');
+      const cookie = String(v.DEEPSEEK_COOKIE || '').trim();
+      if (token || cookie) {
+        accounts.push({
+          id: a.name || `conn${i}`,
+          token,
+          cookie,
+          sessionId: null,
+          deadUntil: 0,
+        });
+      }
+    }
+  } catch (_) {}
+
   const rawAccounts = process.env.DEEPSEEK_ACCOUNTS || '';
   if (rawAccounts.trim()) {
     for (const line of rawAccounts.split(/[\n;]+/)) {
       const s = line.trim();
       if (!s) continue;
       const pipe = s.indexOf('|');
-      if (pipe === -1) accounts.push({ token: s, cookie: '' });
-      else accounts.push({ token: s.slice(0, pipe).trim(), cookie: s.slice(pipe + 1).trim() });
+      if (pipe === -1) accounts.push({ token: unwrapToken(s), cookie: '', id: `acc${accounts.length}`, sessionId: null, deadUntil: 0 });
+      else accounts.push({
+        token: unwrapToken(s.slice(0, pipe)),
+        cookie: s.slice(pipe + 1).trim(),
+        id: `acc${accounts.length}`,
+        sessionId: null,
+        deadUntil: 0,
+      });
     }
   }
-  const tokens = (process.env.DEEPSEEK_TOKEN || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const tokens = (process.env.DEEPSEEK_TOKEN || '').split(',').map((x) => unwrapToken(x)).filter(Boolean);
   const cookies = (process.env.DEEPSEEK_COOKIE || '').split('|||').map((x) => x.trim());
-  if (!accounts.length && tokens.length) {
+  if (tokens.length) {
     for (let i = 0; i < tokens.length; i++) {
-      accounts.push({ token: tokens[i], cookie: cookies[i] || cookies[0] || '' });
+      // avoid dup if already from connections
+      if (accounts.some((a) => a.token === tokens[i])) continue;
+      accounts.push({
+        token: tokens[i],
+        cookie: cookies[i] || cookies[0] || '',
+        id: `env${i}`,
+        sessionId: null,
+        deadUntil: 0,
+      });
     }
   }
   return accounts;
 }
 
-let ACCOUNTS = loadAccounts().map((a, i) => ({
-  ...a,
-  id: a.id || `acc${i}`,
-  sessionId: null,
-  deadUntil: 0, // timestamp ms — skip until then after 40003
-}));
+function reloadAccountsFromEnv() {
+  const prev = ACCOUNTS || [];
+  const next = loadAccounts();
+  // preserve sessionId / deadUntil when token matches
+  for (const a of next) {
+    const old = prev.find((p) => p.token && p.token === a.token);
+    if (old) {
+      a.sessionId = old.sessionId;
+      a.deadUntil = old.deadUntil;
+      a.inflight = old.inflight;
+    }
+  }
+  ACCOUNTS = next;
+  return ACCOUNTS;
+}
+
+let ACCOUNTS = loadAccounts();
 const AUTH_COOLDOWN_MS = Math.max(
   60_000,
   parseInt(process.env.DEEPSEEK_AUTH_COOLDOWN_MS || String(15 * 60 * 1000), 10) || 900_000
@@ -690,6 +753,8 @@ async function consumeDeepSeekSSE(chatRes, {
 }
 
 async function deepseekProxy(opts, res) {
+  // Pick up extension / admin credentials saved after process start
+  reloadAccountsFromEnv();
   // Only real reasoner IDs / explicit thinking flag — NOT plain "deepseek"/"deepseek-chat"
   const modelName = String(opts.model || 'deepseek').toLowerCase();
   const isExpert =
@@ -736,7 +801,7 @@ async function deepseekProxy(opts, res) {
     res.write(`data: ${mkChunk({ role: 'assistant', content: '' })}\n\n`);
 
     if (!ACCOUNTS.length) {
-      throw new Error('Missing DEEPSEEK_TOKEN / DEEPSEEK_COOKIE — set env (multi: DEEPSEEK_ACCOUNTS or TOKEN,TOKEN with COOKIE|||COOKIE)');
+      throw new Error('Missing DEEPSEEK_TOKEN / DEEPSEEK_COOKIE — capture with extension or set env (check Admin → DeepSeek accounts)');
     }
 
     // Lease account slot (inflight + wait queue)

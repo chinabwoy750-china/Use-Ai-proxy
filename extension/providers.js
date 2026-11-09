@@ -7,8 +7,33 @@ const EXT_PROVIDERS = [
     cookieDomains: ['.deepseek.com', 'chat.deepseek.com', 'www.deepseek.com'],
     localKeys: ['userToken', 'token'],
     build(ctx) {
-      const token = String(ctx.local.userToken || ctx.local.token || ctx.bearer || '').replace(/^Bearer\s+/i, '');
-      return { DEEPSEEK_URL: 'https://chat.deepseek.com', DEEPSEEK_TOKEN: token, DEEPSEEK_COOKIE: ctx.cookieHeader };
+      function unwrap(raw) {
+        let t = String(raw || '').trim().replace(/^Bearer\s+/i, '');
+        if (!t) return '';
+        if (t.startsWith('{') || t.startsWith('"')) {
+          try {
+            const j = JSON.parse(t);
+            if (typeof j === 'string') t = j;
+            else if (j && typeof j === 'object') t = j.value || j.token || j.userToken || j.access_token || t;
+          } catch (e) {}
+        }
+        return String(t || '').replace(/^Bearer\s+/i, '').trim();
+      }
+      let token = unwrap(ctx.local.userToken || ctx.local.token || ctx.bearer || '');
+      if (!token) {
+        for (const [k, v] of Object.entries(ctx.local || {})) {
+          if (!/token/i.test(k)) continue;
+          const u = unwrap(v);
+          if (u && u.length > 20) { token = u; break; }
+        }
+      }
+      if (!token) throw new Error('No DeepSeek token in localStorage — stay logged in on chat.deepseek.com');
+      if (!ctx.cookieHeader) throw new Error('No DeepSeek cookies — log in fully first');
+      return {
+        DEEPSEEK_URL: 'https://chat.deepseek.com',
+        DEEPSEEK_TOKEN: token,
+        DEEPSEEK_COOKIE: ctx.cookieHeader,
+      };
     },
   },
   {

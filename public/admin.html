@@ -300,7 +300,7 @@ function renderDetail(){
   const accounts=accountsOf(p); const rr=!!(connMap[p.id]&&connMap[p.id].roundRobin);
   const fields=accountFields(p);
   const connHtml=accounts.length?accounts.map((a,i)=>{
-    const vals=a.values||{}; const preview=fields.map(f=>vals[f.key]||a.key||'').filter(Boolean)[0]||'';
+    const vals=a.values||{}; const previewKeys=Object.keys(vals).filter(k=>vals[k]); const preview=previewKeys.length?(previewKeys.join(', ')+' · '+String(vals[previewKeys[0]]||'').slice(0,18)):(String(a.key||'').slice(0,24));
     return `<div class="conn"><div style="min-width:0"><div style="font-weight:650">${a.name||('Account '+(i+1))}</div>
       <code>${String(preview).slice(0,28)}${String(preview).length>28?'…':''}</code></div>
       <button class="btn ghost" data-del="${i}" style="padding:8px;display:grid;place-items:center" title="Delete">${ICO.trash}</button></div>`;
@@ -344,9 +344,11 @@ function renderDetail(){
         <button class="btn ghost block" id="addModel" style="margin-top:8px;border-style:dashed">${ICO.plus} Add model</button>
       </div>
       <div class="card">
-        <h2>Test</h2>
+        <div class="row" style="margin-bottom:10px"><h2 style="margin:0">Test</h2>
+          <button class="icon-btn" id="copyTest" title="Copy result" style="display:none">${ICO.copy}</button>
+        </div>
         <button class="btn blue block" id="test">Test connection</button>
-        <pre id="testOut" class="muted" style="white-space:pre-wrap;font-family:var(--mono);font-size:11px;margin-top:10px"></pre>
+        <pre id="testOut" class="muted" style="white-space:pre-wrap;font-family:var(--mono);font-size:12px;margin-top:10px;max-height:280px;overflow:auto;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px"></pre>
       </div>
     </div>
   </div>${modal?renderAccountModal(p,fields):''}${importModelsOpen?renderImport(p):''}`;
@@ -433,8 +435,48 @@ function renderDetail(){
   document.getElementById('addModel').onclick=async()=>{const m=prompt('Model id');if(!m)return;
     await saveConn(p.id,{customModels:Array.from(new Set([...((connMap[p.id]||{}).customModels||[]),m.trim()])),enabledModels:Array.from(new Set([...enabledModels(p),m.trim()])),accounts});render()};
   document.getElementById('test').onclick=async()=>{
-    const out=document.getElementById('testOut');out.textContent='Testing…';
-    try{const j=await api('/api/admin/test',{method:'POST',body:JSON.stringify({provider:p.id,model:(enabledModels(p)[0]||p.id)})});out.textContent=JSON.stringify(j,null,2);toast(j.ok?'OK':(j.error||'fail'))}catch(e){out.textContent=e.message;toast(e.message)}
+    const out=document.getElementById('testOut');
+    const copyBtn=document.getElementById('copyTest');
+    out.textContent='Testing…';
+    if(copyBtn) copyBtn.style.display='none';
+    try{
+      const j=await api('/api/admin/test',{method:'POST',body:JSON.stringify({provider:p.id,model:(enabledModels(p)[0]||p.id)})});
+      // Prefer readable reply text over raw SSE dump
+      let reply='';
+      const raw=String(j.content||j.data||'');
+      const parts=raw.split('\\n').map(l=>l.replace(/^data:\\s*/,'').trim()).filter(Boolean);
+      for(const part of parts){
+        if(part==='[DONE]') continue;
+        try{
+          const o=JSON.parse(part);
+          const d=o.choices&&o.choices[0]&&o.choices[0].delta;
+          if(d&&d.content) reply+=d.content;
+          if(o.error&&o.error.message) reply+=(reply?'\\n':'')+'[Error: '+o.error.message+']';
+        }catch{}
+      }
+      if(!reply && j.error) reply=String(j.error);
+      if(!reply) reply=raw.slice(0,500)||JSON.stringify(j,null,2);
+      const summary={
+        ok:!!j.ok,
+        status:j.status||null,
+        model:j.model||(enabledModels(p)[0]||p.id),
+        reply:reply.trim(),
+        error:j.error||null,
+      };
+      out.textContent=JSON.stringify(summary,null,2);
+      if(copyBtn){
+        copyBtn.style.display='grid';
+        copyBtn.onclick=async()=>{await copyText(out.textContent);toast('Copied test result')};
+      }
+      toast(j.ok?'OK':(j.error||summary.reply||'fail'));
+    }catch(e){
+      out.textContent=JSON.stringify({ok:false,error:e.message||String(e)},null,2);
+      if(copyBtn){
+        copyBtn.style.display='grid';
+        copyBtn.onclick=async()=>{await copyText(out.textContent);toast('Copied')};
+      }
+      toast(e.message);
+    }
   };
   if(modal) wireAccountModal(p,fields,accounts);
   if(importModelsOpen) wireImport(p);

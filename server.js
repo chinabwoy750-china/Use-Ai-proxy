@@ -369,9 +369,21 @@ const server = http.createServer(async (req, res) => {
         process.env.PROVIDER_CONNECTIONS = JSON.stringify(all);
         if (connections && connections.writeConnections) connections.writeConnections(all);
 
-        // Also write env keys for active (first / latest) credentials
+        // Write env keys from latest account (overwrite) so proxies see them immediately
         const envBody = { ...values };
         envBody.PROVIDER_CONNECTIONS = process.env.PROVIDER_CONNECTIONS;
+        // DeepSeek multi-account helper string
+        if (provider === 'deepseek') {
+          const lines = accounts.map((a) => {
+            const v = a.values || {};
+            const tok = String(v.DEEPSEEK_TOKEN || a.key || '').trim();
+            const c = String(v.DEEPSEEK_COOKIE || '').trim();
+            return tok ? (tok + '|' + c) : '';
+          }).filter(Boolean);
+          if (lines.length) envBody.DEEPSEEK_ACCOUNTS = lines.join('\n');
+          if (values.DEEPSEEK_TOKEN) envBody.DEEPSEEK_TOKEN = values.DEEPSEEK_TOKEN;
+          if (values.DEEPSEEK_COOKIE) envBody.DEEPSEEK_COOKIE = values.DEEPSEEK_COOKIE;
+        }
         await config.saveFromAdmin(envBody);
 
         return sendJson(res, 200, {
