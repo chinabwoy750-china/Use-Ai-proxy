@@ -55,54 +55,69 @@ function sseWrite(res, obj) {
   res.write(`data: ${JSON.stringify(obj)}\n\n`);
 }
 
-/** Collect text tokens from nested Grok event shapes */
-function extractGrokText(ev, depth = 0) {
-  if (ev == null || depth > 8) return '';
-  if (typeof ev === 'string') return ev;
+/** Streaming token only (not final message, not thinking) */
+function extractStreamToken(ev, depth = 0) {
+  if (ev == null || depth > 6) return '';
   if (typeof ev !== 'object') return '';
-  if (Array.isArray(ev)) {
-    return ev.map((x) => extractGrokText(x, depth + 1)).join('');
-  }
+  if (Array.isArray(ev)) return '';
 
-  // Common streaming fields
-  for (const k of ['token', 'response_token', 'delta', 'text', 'content', 'message']) {
-    if (typeof ev[k] === 'string' && ev[k]) {
-      // skip pure metadata-looking short strings that are ids
-      if (k === 'message' && ev[k].length < 3) continue;
-      return ev[k];
-    }
-  }
+  if (ev.isThinking || ev.thinking || ev.is_thinking) return '';
+  if (ev.messageTag === 'thinking' || ev.tag === 'thinking') return '';
+  if (String(ev.messageType || ev.type || '').toLowerCase().includes('think')) return '';
 
-  if (ev.modelResponse) {
-    const mr = ev.modelResponse;
-    if (typeof mr === 'string') return mr;
-    if (typeof mr.message === 'string') return mr.message;
-    if (typeof mr.content === 'string') return mr.content;
-  }
+  if (typeof ev.token === 'string') return ev.token;
+  if (typeof ev.response_token === 'string') return ev.response_token;
 
-  if (ev.result) {
-    const t = extractGrokText(ev.result, depth + 1);
-    if (t) return t;
-  }
-  if (ev.response) {
-    const t = extractGrokText(ev.response, depth + 1);
-    if (t) return t;
-  }
-  if (ev.data) {
-    const t = extractGrokText(ev.data, depth + 1);
-    if (t) return t;
-  }
-
+  if (ev.result) return extractStreamToken(ev.result, depth + 1);
+  if (ev.response) return extractStreamToken(ev.response, depth + 1);
   return '';
 }
 
-function parseStreamBody(text) {
-  let full = '';
-  const chunks = [];
+function extractFinalMessage(ev) {
+  if (!ev || typeof ev !== 'object') return '';
+  const paths = [
+    ev?.result?.modelResponse?.message,
+    ev?.modelResponse?.message,
+    ev?.result?.message,
+    ev?.finalMessage,
+  ];
+  for (const p of paths) {
+    if (typeof p === 'string' && p.trim()) return p;
+  }
+  if (ev.result) {
+    const nested = extractFinalMessage(ev.result);
+    if (nested) return nested;
+  }
+  return '';
+}
 
-  // NDJSON / SSE lines
-  for (const line of String(text || '').split(/\r?\n/)) {
-    let payload = line.trim();
+function cleanGrokText(s) {
+  let t = String(s || '');
+  t = t.replace(/^Thinking about your request\s*/i, '');
+  t = t.replace(/^Thinking[\s.…]*\n+/i, '');
+  const half = Math.floor(t.length / 2);
+  if (t.length >= 8 && t.slice(0, half) === t.slice(half)) {
+    t = t.slice(0, half);
+  }
+  for (let n = Math.min(200, Math.floor(t.length / 2)); n >= 12; n--) {
+    if (t.slice(-n) === t.slice(-2 * n, -n)) {
+      t = t.slice(0, -n);
+      break;
+    }
+  }
+  return t.trim();
+}
+
+function parseStreamBody(text) {
+  let streamed = '';
+  let finalMsg = '';
+
+  const lines = String(text || '').split(/\r?\n/);
+  const extra = text.includes('}{') ? text.replace(/\}\s*\{/g, '}\n{').split('\n') : [];
+  const allLines = lines.concat(extra);
+
+  for (const line of allLines) {
+    let payload = String(line || '').trim();
     if (!payload) continue;
     if (payload.startsWith('data:')) payload = payload.slice(5).trim();
     if (!payload || payload === '[DONE]') continue;
@@ -112,50 +127,26 @@ function parseStreamBody(text) {
     } catch {
       continue;
     }
-    const tok = extractGrokText(ev);
-    if (tok) {
-      full += tok;
-      chunks.push(tok);
-    }
-    // Final message often only in modelResponse once — prefer final full message if present
-    const finalMsg =
-      ev?.result?.modelResponse?.message ||
-      ev?.modelResponse?.message ||
-      '';
-    if (typeof finalMsg === 'string' && finalMsg.length > full.length) {
-      full = finalMsg;
-    }
+    const fin = extractFinalMessage(ev);
+    if (fin) finalMsg = fin;
+    const tok = extractStreamToken(ev);
+    if (tok) streamed += tok;
   }
 
-  // Single JSON object
+  // Prefer final modelResponse (complete answer, no thinking stream)
+  let full = finalMsg || streamed;
+
   if (!full) {
     try {
       const j = JSON.parse(text);
-      full =
-        extractGrokText(j) ||
-        j?.result?.modelResponse?.message ||
-        j?.modelResponse?.message ||
-        j?.message ||
-        '';
+      full = extractFinalMessage(j) || extractStreamToken(j) || '';
     } catch (_) {}
   }
 
-  // Concatenated JSON objects without newlines
-  if (!full && text.includes('}{')) {
-    const parts = text.replace(/\}\s*\{/g, '}\n{').split('\n');
-    for (const p of parts) {
-      try {
-        const ev = JSON.parse(p);
-        const tok = extractGrokText(ev);
-        if (tok) full += tok;
-        const finalMsg = ev?.result?.modelResponse?.message;
-        if (typeof finalMsg === 'string' && finalMsg.length > full.length) full = finalMsg;
-      } catch (_) {}
-    }
-  }
-
-  return { full: String(full || ''), chunks };
+  full = cleanGrokText(full);
+  return { full, chunks: [] };
 }
+
 
 async function handle(opts, res) {
   const cookie = loadCookie();
