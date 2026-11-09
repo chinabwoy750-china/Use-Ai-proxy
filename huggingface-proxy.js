@@ -179,7 +179,7 @@ module.exports = async function huggingfaceProxy(opts, res) {
     } catch {}
   };
 
-  const maxAttempts = Math.max(COOKIE_POOL.length, 1);
+  const maxAttempts = Math.max(loadCookiePool().length, 1);
   let upstream = null;
   let lastErr = null;
   const tried = new Set();
@@ -187,7 +187,7 @@ module.exports = async function huggingfaceProxy(opts, res) {
   for (let attempt = 0; attempt < maxAttempts + 1; attempt++) {
     const cookie = pickCookie();
     if (!cookie || tried.has(cookie)) {
-      if (tried.size >= COOKIE_POOL.length) break;
+      if (tried.size >= loadCookiePool().length) break;
       continue;
     }
     tried.add(cookie);
