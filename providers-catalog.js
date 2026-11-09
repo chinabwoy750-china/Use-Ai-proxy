@@ -7,6 +7,33 @@ const path = require('path');
 const iconLib = require('./icon-library');
 
 const ICONS_DIR = path.join(__dirname, 'public', 'icons');
+const ICON_LINKS_PATH = path.join(ICONS_DIR, '_links.json');
+
+/** Durable overrides (Redis/env) — survive Render redeploys */
+function readIconOverrides() {
+  try {
+    const raw = process.env.PROVIDER_ICON_OVERRIDES || '';
+    if (!raw) return {};
+    const j = JSON.parse(raw);
+    return j && typeof j === 'object' ? j : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeIconOverrides(obj) {
+  const next = obj && typeof obj === 'object' ? obj : {};
+  process.env.PROVIDER_ICON_OVERRIDES = JSON.stringify(next);
+  // best-effort persist via config-store (async fire-and-forget)
+  try {
+    const config = require('./config-store');
+    if (config.saveFromAdmin) {
+      Promise.resolve(config.saveFromAdmin({ PROVIDER_ICON_OVERRIDES: process.env.PROVIDER_ICON_OVERRIDES })).catch(() => {});
+    }
+  } catch (_) {}
+  return next;
+}
+
 
 const PROVIDERS = [
   { id: 'deepseek', name: 'DeepSeek', color: '#4D6BFE', text: 'DS', site: 'https://chat.deepseek.com', models: 'deepseek-chat, deepseek-reasoner', scraper: 'deepseek' },
@@ -196,11 +223,15 @@ function scraperFor(provider) {
 const ICON_LINKS_PATH = path.join(ICONS_DIR, 'links.json');
 
 function listIconLinks() {
+  const fromDisk = {};
   try {
-    if (!fs.existsSync(ICON_LINKS_PATH)) return {};
-    const j = JSON.parse(fs.readFileSync(ICON_LINKS_PATH, 'utf8'));
-    return j && typeof j === 'object' ? j : {};
-  } catch { return {}; }
+    if (fs.existsSync(ICON_LINKS_PATH)) {
+      const j = JSON.parse(fs.readFileSync(ICON_LINKS_PATH, 'utf8'));
+      if (j && typeof j === 'object') Object.assign(fromDisk, j);
+    }
+  } catch {}
+  // Redis/env overrides win over disk
+  return { ...fromDisk, ...readIconOverrides() };
 }
 
 function saveIconLink(id, url) {
@@ -208,11 +239,21 @@ function saveIconLink(id, url) {
   if (!safe) throw new Error('bad id');
   const u = String(url || '').trim();
   if (!u) throw new Error('url required');
-  if (!/^https?:\/\//i.test(u)) throw new Error('url must start with http(s)://');
-  if (!fs.existsSync(ICONS_DIR)) fs.mkdirSync(ICONS_DIR, { recursive: true });
-  const all = listIconLinks();
+  if (!/^https?:\/\//i.test(u) && !/^data:image\//i.test(u)) {
+    throw new Error('url must be http(s) or data:image');
+  }
+  try {
+    if (!fs.existsSync(ICONS_DIR)) fs.mkdirSync(ICONS_DIR, { recursive: true });
+    const disk = {};
+    try {
+      if (fs.existsSync(ICON_LINKS_PATH)) Object.assign(disk, JSON.parse(fs.readFileSync(ICON_LINKS_PATH, 'utf8')));
+    } catch {}
+    disk[safe] = u;
+    fs.writeFileSync(ICON_LINKS_PATH, JSON.stringify(disk, null, 2));
+  } catch (_) {}
+  const all = readIconOverrides();
   all[safe] = u;
-  fs.writeFileSync(ICON_LINKS_PATH, JSON.stringify(all, null, 2));
+  writeIconOverrides(all);
   return u;
 }
 
@@ -220,8 +261,8 @@ function resolveIcons() {
   const files = listIconFiles();
   const links = listIconLinks();
   const library = iconLib.buildLibraryIcons(PROVIDERS);
-  // priority: uploaded file > manual link > CDN library
-  return { ...library, ...links, ...files };
+  // priority: durable overrides / uploads > disk files > CDN library
+  return { ...library, ...files, ...links };
 }
 
 function iconCandidatesFor(id) {
@@ -253,17 +294,38 @@ function saveIcon(id, mime, base64Data) {
     'image/jpg': 'jpg',
   };
   const ext = map[mime] || 'png';
-  if (!fs.existsSync(ICONS_DIR)) fs.mkdirSync(ICONS_DIR, { recursive: true });
-  // remove old extensions for this id
-  for (const e of ['png', 'svg', 'webp', 'jpg', 'jpeg']) {
-    const p = path.join(ICONS_DIR, `${safe}.${e}`);
-    if (fs.existsSync(p)) try { fs.unlinkSync(p); } catch (_) {}
-  }
-  const buf = Buffer.from(String(base64Data).replace(/^data:[^;]+;base64,/, ''), 'base64');
+  const raw = String(base64Data).replace(/^data:[^;]+;base64,/, '');
+  const buf = Buffer.from(raw, 'base64');
   if (buf.length > 1.5 * 1024 * 1024) throw new Error('icon too large (max 1.5MB)');
-  const file = path.join(ICONS_DIR, `${safe}.${ext}`);
-  fs.writeFileSync(file, buf);
-  return '/icons/' + safe + '.' + ext;
+  // Prefer durable data-URI in Redis (survives redeploy). Also write disk for local/dev.
+  const dataUri = 'data:' + (mime || 'image/png') + ';base64,' + raw;
+  if (buf.length > 350000) {
+    // large files: disk only (Redis limit); warn by still saving link if possible
+    try {
+      if (!fs.existsSync(ICONS_DIR)) fs.mkdirSync(ICONS_DIR, { recursive: true });
+      for (const e of ['png', 'svg', 'webp', 'jpg', 'jpeg']) {
+        const p = path.join(ICONS_DIR, safe + '.' + e);
+        if (fs.existsSync(p)) try { fs.unlinkSync(p); } catch (_) {}
+      }
+      fs.writeFileSync(path.join(ICONS_DIR, safe + '.' + ext), buf);
+    } catch (e) {
+      throw new Error('upload failed: ' + (e.message || e));
+    }
+    // store path reference (ephemeral on Render — prefer smaller icons or URL links)
+    const url = '/icons/' + safe + '.' + ext;
+    const all = readIconOverrides();
+    all[safe] = url;
+    writeIconOverrides(all);
+    return url;
+  }
+  const all = readIconOverrides();
+  all[safe] = dataUri;
+  writeIconOverrides(all);
+  try {
+    if (!fs.existsSync(ICONS_DIR)) fs.mkdirSync(ICONS_DIR, { recursive: true });
+    fs.writeFileSync(path.join(ICONS_DIR, safe + '.' + ext), buf);
+  } catch (_) {}
+  return dataUri;
 }
 
 module.exports = {

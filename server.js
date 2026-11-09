@@ -297,6 +297,11 @@ const server = http.createServer(async (req, res) => {
       try { body = JSON.parse(raw || '{}'); } catch { return sendJson(res, 400, { error: 'bad json' }); }
       try {
         const url = catalog.saveIconLink(body.id, body.url);
+        try {
+          await config.saveFromAdmin({
+            PROVIDER_ICON_OVERRIDES: process.env.PROVIDER_ICON_OVERRIDES || '{}',
+          });
+        } catch (_) {}
         return sendJson(res, 200, { ok: true, url, icons: catalog.resolveIcons() });
       } catch (e) {
         return sendJson(res, 400, { error: e.message || String(e) });
@@ -311,6 +316,11 @@ const server = http.createServer(async (req, res) => {
       try { body = JSON.parse(raw || '{}'); } catch { return sendJson(res, 400, { error: 'bad json' }); }
       try {
         const url = catalog.saveIcon(body.id, body.mime || 'image/png', body.data || '');
+        try {
+          await config.saveFromAdmin({
+            PROVIDER_ICON_OVERRIDES: process.env.PROVIDER_ICON_OVERRIDES || '{}',
+          });
+        } catch (_) {}
         return sendJson(res, 200, { ok: true, url, icons: catalog.resolveIcons ? catalog.resolveIcons() : catalog.listIconFiles() });
       } catch (e) {
         return sendJson(res, 400, { error: e.message || String(e) });
