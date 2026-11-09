@@ -383,6 +383,16 @@ const server = http.createServer(async (req, res) => {
         const envBody = { ...values };
         envBody.PROVIDER_CONNECTIONS = process.env.PROVIDER_CONNECTIONS;
         // DeepSeek multi-account helper string
+        if (provider === 'huggingface' || provider === 'hf') {
+          const cookies = accounts.map((a) => {
+            const v = a.values || {};
+            return String(v.HF_CHAT_COOKIE || v.HF_COOKIE || a.key || '').trim();
+          }).filter(Boolean);
+          if (cookies.length) {
+            envBody.HF_CHAT_COOKIE = cookies[cookies.length - 1];
+            envBody.HF_COOKIES = cookies.join('|||');
+          }
+        }
         if (provider === 'deepseek') {
           const lines = accounts.map((a) => {
             const v = a.values || {};

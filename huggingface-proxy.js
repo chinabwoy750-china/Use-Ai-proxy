@@ -12,30 +12,50 @@ const crypto = require('crypto');
 const HF_BASE = (process.env.HF_CHAT_URL || 'https://huggingface.co').replace(/\/$/, '');
 const DEFAULT_MODEL = process.env.HF_CHAT_MODEL || 'omni';
 
-const COOKIE_POOL = (process.env.HF_COOKIES || process.env.HF_CHAT_COOKIE || process.env.HF_COOKIE || '')
-  .split('|||')
-  .map((s) => s.trim())
-  .filter(Boolean);
+function loadCookiePool() {
+  const list = [];
+  // Extension / admin multi-accounts
+  try {
+    const all = JSON.parse(process.env.PROVIDER_CONNECTIONS || '{}');
+    const entry = all.huggingface || all.hf || {};
+    const accounts = Array.isArray(entry.accounts) ? entry.accounts : [];
+    for (const a of accounts) {
+      const v = (a && a.values) || {};
+      const c = String(v.HF_CHAT_COOKIE || v.HF_COOKIE || v.HF_COOKIES || a.key || '').trim();
+      if (c) list.push(c);
+    }
+  } catch (_) {}
+  const envPool = (process.env.HF_COOKIES || process.env.HF_CHAT_COOKIE || process.env.HF_COOKIE || '')
+    .split('|||')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const c of envPool) {
+    if (!list.includes(c)) list.push(c);
+  }
+  return list;
+}
+
 let rrIdx = 0;
 const coolUntil = new Map();
 
 function pickCookie() {
-  if (!COOKIE_POOL.length) return '';
+  const pool = loadCookiePool();
+  if (!pool.length) return '';
   const now = Date.now();
-  for (let i = 0; i < COOKIE_POOL.length; i++) {
-    const c = COOKIE_POOL[(rrIdx + i) % COOKIE_POOL.length];
+  for (let i = 0; i < pool.length; i++) {
+    const c = pool[(rrIdx + i) % pool.length];
     if ((coolUntil.get(c) || 0) > now) continue;
-    rrIdx = (rrIdx + i + 1) % COOKIE_POOL.length;
+    rrIdx = (rrIdx + i + 1) % pool.length;
     return c;
   }
-  return COOKIE_POOL[rrIdx++ % COOKIE_POOL.length];
+  return pool[rrIdx++ % pool.length];
 }
 
 function coolCookie(c, ms = 60_000) {
   if (c) coolUntil.set(c, Date.now() + ms);
 }
 
-console.log('[huggingface] cookie pool size:', COOKIE_POOL.length);
+console.log('[huggingface] cookie loader ready');
 
 const MODELS = [
   { slug: 'huggingface', label: 'HF Chat (default)' },
@@ -132,7 +152,7 @@ async function createConversation(cookie, modelId, preprompt) {
 }
 
 module.exports = async function huggingfaceProxy(opts, res) {
-  if (!COOKIE_POOL.length) {
+  if (!loadCookiePool().length) {
     res.statusCode = 503;
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -283,4 +303,4 @@ module.exports = async function huggingfaceProxy(opts, res) {
 };
 
 module.exports.MODELS = MODELS;
-module.exports.isConfigured = () => COOKIE_POOL.length > 0;
+module.exports.isConfigured = () => loadCookiePool().length > 0;
