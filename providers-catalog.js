@@ -294,33 +294,18 @@ function saveIcon(id, mime, base64Data) {
   const ext = map[mime] || 'png';
   const raw = String(base64Data).replace(/^data:[^;]+;base64,/, '');
   const buf = Buffer.from(raw, 'base64');
-  if (buf.length > 1.5 * 1024 * 1024) throw new Error('icon too large (max 1.5MB)');
-  // Prefer durable data-URI in Redis (survives redeploy). Also write disk for local/dev.
+  if (buf.length > 2 * 1024 * 1024) throw new Error('icon too large (max 2MB)');
+  // Durable data-URI in Redis (survives redeploy), up to 2MB
   const dataUri = 'data:' + (mime || 'image/png') + ';base64,' + raw;
-  if (buf.length > 350000) {
-    // large files: disk only (Redis limit); warn by still saving link if possible
-    try {
-      if (!fs.existsSync(ICONS_DIR)) fs.mkdirSync(ICONS_DIR, { recursive: true });
-      for (const e of ['png', 'svg', 'webp', 'jpg', 'jpeg']) {
-        const p = path.join(ICONS_DIR, safe + '.' + e);
-        if (fs.existsSync(p)) try { fs.unlinkSync(p); } catch (_) {}
-      }
-      fs.writeFileSync(path.join(ICONS_DIR, safe + '.' + ext), buf);
-    } catch (e) {
-      throw new Error('upload failed: ' + (e.message || e));
-    }
-    // store path reference (ephemeral on Render — prefer smaller icons or URL links)
-    const url = '/icons/' + safe + '.' + ext;
-    const all = readIconOverrides();
-    all[safe] = url;
-    writeIconOverrides(all);
-    return url;
-  }
   const all = readIconOverrides();
   all[safe] = dataUri;
   writeIconOverrides(all);
   try {
     if (!fs.existsSync(ICONS_DIR)) fs.mkdirSync(ICONS_DIR, { recursive: true });
+    for (const e of ['png', 'svg', 'webp', 'jpg', 'jpeg']) {
+      const p = path.join(ICONS_DIR, safe + '.' + e);
+      if (fs.existsSync(p)) try { fs.unlinkSync(p); } catch (_) {}
+    }
     fs.writeFileSync(path.join(ICONS_DIR, safe + '.' + ext), buf);
   } catch (_) {}
   return dataUri;
