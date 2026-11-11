@@ -2,6 +2,9 @@
 /**
  * Grok Web → OpenAI SSE
  * Auth: full grok.com Cookie (sso + ideally cf_clearance)
+ *
+ * Model ids / modes below are taken from grok.com's live client bundle
+ * (chat-page-store: modelModeToModelConfigModelMode) — do not invent new ones.
  */
 const crypto = require('crypto');
 
@@ -9,35 +12,123 @@ const GROK_NEW = process.env.GROK_URL || 'https://grok.com/rest/app-chat/convers
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
+// modelName = grok.com model id, modelMode = its ModelMode enum.
 const MODELS = [
-  { slug: 'grok', modelName: 'grok-3', modelMode: 'MODEL_MODE_FAST' },
-  { slug: 'grok-3', modelName: 'grok-3', modelMode: 'MODEL_MODE_FAST' },
-  { slug: 'grok-4', modelName: 'grok-4', modelMode: 'MODEL_MODE_FAST' },
-  { slug: 'grok-4-thinking', modelName: 'grok-4', modelMode: 'MODEL_MODE_GROK_4_1_THINKING' },
-  { slug: 'grok-4-mini', modelName: 'grok-4-mini', modelMode: 'MODEL_MODE_FAST' },
-  { slug: 'grok-2', modelName: 'grok-2', modelMode: 'MODEL_MODE_FAST' },
+  { slug: 'grok', label: 'Grok (fast)', modelName: 'grok-3', modelMode: 'MODEL_MODE_FAST' },
+  { slug: 'grok-fast', label: 'Grok Fast', modelName: 'grok-3', modelMode: 'MODEL_MODE_FAST' },
+  { slug: 'grok-auto', label: 'Grok Auto', modelName: 'grok-4-auto', modelMode: 'MODEL_MODE_AUTO' },
+  { slug: 'grok-expert', label: 'Grok Expert', modelName: 'grok-4', modelMode: 'MODEL_MODE_EXPERT' },
+  { slug: 'grok-heavy', label: 'Grok Heavy', modelName: 'grok-4-heavy', modelMode: 'MODEL_MODE_HEAVY' },
+  { slug: 'grok-4-1', label: 'Grok 4.1', modelName: 'grok-4-1', modelMode: 'MODEL_MODE_GROK_4_1' },
+  {
+    slug: 'grok-4-1-thinking',
+    label: 'Grok 4.1 Thinking',
+    modelName: 'grok-4-1-thinking',
+    modelMode: 'MODEL_MODE_GROK_4_1_THINKING',
+  },
+  {
+    slug: 'grok-4-1-nightly',
+    label: 'Grok 4.1 Nightly',
+    modelName: 'grok-4-1-nightly',
+    modelMode: 'MODEL_MODE_GROK_4_1_NIGHTLY',
+  },
+  {
+    slug: 'grok-4-mini-thinking',
+    label: 'Grok 4 Mini Thinking',
+    modelName: 'grok-4-mini-thinking',
+    modelMode: 'MODEL_MODE_GROK_4_MINI_THINKING',
+  },
+  { slug: 'grok-420', label: 'Grok 4.20', modelName: 'grok-420', modelMode: 'MODEL_MODE_GROK_420' },
+  { slug: 'grok-43', label: 'Grok 4.3', modelName: 'grok-43', modelMode: 'MODEL_MODE_GROK43' },
 ];
 
+// Old / made-up slugs kept as aliases so existing clients don't break.
+const ALIASES = {
+  'grok-3': 'grok',
+  'grok-3-5': 'grok',
+  'grok-2': 'grok',
+  'grok-4': 'grok-4-1',
+  'grok-4-thinking': 'grok-4-1-thinking',
+  'grok-4-mini': 'grok-4-mini-thinking',
+  'grok-4.1': 'grok-4-1',
+  'grok-4.1-thinking': 'grok-4-1-thinking',
+  'grok-4.20': 'grok-420',
+  'grok-4.3': 'grok-43',
+  'grok-latest': 'grok',
+};
+
 function modelInfo(id) {
-  const m = String(id || '').toLowerCase().replace(/^grok\//, '');
-  return MODELS.find((x) => x.slug === m) || MODELS[0];
+  const m = String(id || '')
+    .toLowerCase()
+    .replace(/^grok\//, '')
+    .trim();
+  const slug = ALIASES[m] || m;
+  return MODELS.find((x) => x.slug === slug) || MODELS[0];
 }
 
-function loadCookie() {
-  let c = (process.env.GROK_COOKIE || '').trim();
+// ── Cookie pool ─────────────────────────────────────────────────────────────
+// GROK_COOKIES supports several cookies separated by "|||" (cookies contain
+// commas, so "," is unsafe). GROK_COOKIE stays the single-account setting.
+function loadCookies() {
+  const out = [];
+  const push = (v) => {
+    const s = String(v || '').trim();
+    if (s && !out.includes(s)) out.push(s);
+  };
+  for (const part of String(process.env.GROK_COOKIES || '').split('|||')) push(part);
+  push(process.env.GROK_COOKIE);
   try {
     const all = JSON.parse(process.env.PROVIDER_CONNECTIONS || '{}');
     const entry = all.grok || {};
     const accounts = Array.isArray(entry.accounts) ? entry.accounts : [];
     for (const a of accounts) {
       const v = (a && a.values && a.values.GROK_COOKIE) || a.key || '';
-      if (String(v).trim()) {
-        c = String(v).trim();
-        break;
-      }
+      push(v);
     }
   } catch (_) {}
-  return c;
+  return out;
+}
+
+const COOLDOWN_MS = Math.max(
+  30_000,
+  parseInt(process.env.GROK_COOLDOWN_MS || String(5 * 60_000), 10) || 300_000
+);
+const MAX_RETRIES = Math.max(0, parseInt(process.env.GROK_RETRIES || '1', 10) || 0);
+const cooldown = new Map(); // cookie -> { until, reason }
+
+function cookieKey(cookie) {
+  return crypto.createHash('sha256').update(String(cookie)).digest('hex').slice(0, 16);
+}
+
+function markCooling(cookie, ms, reason) {
+  const until = Date.now() + Math.max(1000, ms || COOLDOWN_MS);
+  cooldown.set(cookieKey(cookie), { until, reason: reason || '' });
+}
+
+function coolingLeft(cookie) {
+  const s = cooldown.get(cookieKey(cookie));
+  return s && s.until > Date.now() ? s.until - Date.now() : 0;
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function isRateLimited(status, text) {
+  if (status === 429) return true;
+  return /"code"\s*:\s*8\b|too many requests|rate limit/i.test(String(text || ''));
+}
+
+function isAuthFailure(status, text) {
+  if (status === 401 || status === 403) return true;
+  return /unauthorized|forbidden|invalid token|sso|not authenticated|sign in/i.test(String(text || ''));
+}
+
+function retryAfterMs(r) {
+  const h = r && r.headers && typeof r.headers.get === 'function' ? r.headers.get('retry-after') : '';
+  const secs = parseInt(h || '', 10);
+  if (secs > 0) return secs * 1000;
+  return 0;
 }
 
 function lastUserText(messages) {
@@ -147,9 +238,36 @@ function parseStreamBody(text) {
   return { full, chunks: [] };
 }
 
+function rateLimitMessage(info, retryAfter) {
+  const wait = retryAfter > 0 ? ` Retry after ~${Math.ceil(retryAfter / 1000)}s.` : '';
+  return (
+    `Grok 429 — rate limited / quota exhausted for ${info.label} (${info.modelMode}).` +
+    ' Grok Web allows only a few messages per window on free accounts, and premium modes' +
+    ' (4.1 Thinking, 4.1 Nightly, 4.20, 4.3, Heavy) need SuperGrok.' +
+    ` Try model "grok" (fast), wait a bit, or add another account cookie.${wait}`
+  );
+}
+
+async function callGrok(cookie, body) {
+  const r = await fetch(GROK_NEW, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: '*/*',
+      'User-Agent': UA,
+      Origin: 'https://grok.com',
+      Referer: 'https://grok.com/',
+      Cookie: cookie,
+      'Accept-Language': 'en-US,en;q=0.9',
+      'x-xai-request-id': crypto.randomUUID(),
+    },
+    body: JSON.stringify(body),
+  });
+  const text = await r.text();
+  return { r, text };
+}
 
 async function handle(opts, res) {
-  const cookie = loadCookie();
   const stream = opts.stream !== false;
   const model = String(opts.model || 'grok');
   const info = modelInfo(model);
@@ -173,7 +291,8 @@ async function handle(opts, res) {
     });
   }
 
-  if (!cookie) {
+  const cookies = loadCookies();
+  if (!cookies.length) {
     const msg = '\n\n[Error: Grok not configured — set GROK_COOKIE via extension or Admin]';
     if (stream) {
       sseWrite(res, {
@@ -205,108 +324,125 @@ async function handle(opts, res) {
     enableSideBySide: false,
   };
 
+  // Prefer cookies that are not cooling down; fall back to all if every one is.
+  const ready = cookies.filter((c) => coolingLeft(c) === 0);
+  const order = ready.length ? ready : cookies;
+
+  let lastError = null;
+  let lastRetryAfter = 0;
+
   try {
-    const r = await fetch(GROK_NEW, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: '*/*',
-        'User-Agent': UA,
-        Origin: 'https://grok.com',
-        Referer: 'https://grok.com/',
-        Cookie: cookie,
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-      body: JSON.stringify(body),
-    });
+    for (let ci = 0; ci < order.length; ci++) {
+      const cookie = order[ci];
 
-    const text = await r.text();
-    if (!r.ok) {
-      if (/just a moment|cf-browser-verification|cloudflare|attention required/i.test(text)) {
-        throw new Error(
-          'Cloudflare challenge — re-capture GROK_COOKIE with extension (include cf_clearance). Render IP may be blocked.'
-        );
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        let result;
+        try {
+          result = await callGrok(cookie, body);
+        } catch (e) {
+          lastError = new Error(`Grok network error: ${e.message || String(e)}`);
+          break; // try next cookie
+        }
+
+        const { r, text } = result;
+
+        if (r.ok) {
+          if (/just a moment|cf-browser-verification|cloudflare/i.test(text) && text.length < 5000) {
+            lastError = new Error(
+              'Cloudflare HTML instead of chat stream — re-capture cookies or use a non-datacenter IP'
+            );
+            break;
+          }
+
+          const { full } = parseStreamBody(text);
+          if (!full) {
+            const sample = String(text || '')
+              .replace(/\s+/g, ' ')
+              .slice(0, 180);
+            lastError = new Error(
+              'Grok empty reply' +
+                (sample ? ' — upstream: ' + sample : ' — no parseable tokens; try re-capture cookie')
+            );
+            break;
+          }
+
+          if (stream) {
+            sseWrite(res, {
+              id,
+              object: 'chat.completion.chunk',
+              created,
+              model,
+              choices: [{ index: 0, delta: { content: full }, finish_reason: null }],
+            });
+            sseWrite(res, {
+              id,
+              object: 'chat.completion.chunk',
+              created,
+              model,
+              choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+            });
+            res.write('data: [DONE]\n\n');
+            return res.end();
+          }
+          res.writeHead(200, {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
+          });
+          return res.end(
+            JSON.stringify({
+              id,
+              object: 'chat.completion',
+              created,
+              model,
+              choices: [
+                { index: 0, message: { role: 'assistant', content: full }, finish_reason: 'stop' },
+              ],
+            })
+          );
+        }
+
+        if (isRateLimited(r.status, text)) {
+          lastRetryAfter = retryAfterMs(r) || lastRetryAfter;
+          markCooling(cookie, lastRetryAfter || COOLDOWN_MS, '429');
+          const err = new Error(rateLimitMessage(info, lastRetryAfter));
+          err.code = 429;
+          err.retryAfterMs = lastRetryAfter || COOLDOWN_MS;
+          err.upstream = text.slice(0, 220);
+          lastError = err;
+          if (attempt < MAX_RETRIES) {
+            await sleep(1500 * (attempt + 1));
+            continue; // retry same cookie once before rotating
+          }
+          break; // rotate to next cookie
+        }
+
+        if (/just a moment|cf-browser-verification|cloudflare|attention required/i.test(text)) {
+          lastError = new Error(
+            'Cloudflare challenge — re-capture GROK_COOKIE with extension (include cf_clearance). Render IP may be blocked.'
+          );
+          break;
+        }
+
+        if (isAuthFailure(r.status, text)) {
+          lastError = new Error(
+            `Grok auth failed (${r.status}) — re-capture the Cookie (sso + cf_clearance).`
+          );
+          break;
+        }
+
+        lastError = new Error(`Grok ${r.status}: ${text.slice(0, 220)}`);
+        break;
       }
-      throw new Error(`Grok ${r.status}: ${text.slice(0, 220)}`);
-    }
 
-    if (/just a moment|cf-browser-verification|cloudflare/i.test(text) && text.length < 5000) {
-      throw new Error(
-        'Cloudflare HTML instead of chat stream — re-capture cookies or use a non-datacenter IP'
-      );
-    }
-
-    const { full } = parseStreamBody(text);
-
-    if (full) {
-      if (stream) {
-        sseWrite(res, {
-          id,
-          object: 'chat.completion.chunk',
-          created,
-          model,
-          choices: [{ index: 0, delta: { content: full }, finish_reason: null }],
-        });
-        sseWrite(res, {
-          id,
-          object: 'chat.completion.chunk',
-          created,
-          model,
-          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
-        });
-        res.write('data: [DONE]\n\n');
-        return res.end();
+      // If the failure is not rate-limit/auth related, don't burn other accounts.
+      if (lastError && lastError.code !== 429 && !/auth failed|Cloudflare|empty reply|network error/i.test(lastError.message)) {
+        break;
       }
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      return res.end(
-        JSON.stringify({
-          id,
-          object: 'chat.completion',
-          created,
-          model,
-          choices: [{ index: 0, message: { role: 'assistant', content: full }, finish_reason: 'stop' }],
-        })
-      );
     }
 
-    // Empty — surface a short body sample for debugging
-    const sample = String(text || '')
-      .replace(/\s+/g, ' ')
-      .slice(0, 180);
-    const msg =
-      '\n\n[Error: Grok empty reply' +
-      (sample ? ' — upstream: ' + sample : ' — no parseable tokens; try re-capture cookie') +
-      ']';
-    if (stream) {
-      sseWrite(res, {
-        id,
-        object: 'chat.completion.chunk',
-        created,
-        model,
-        choices: [{ index: 0, delta: { content: msg }, finish_reason: null }],
-      });
-      sseWrite(res, {
-        id,
-        object: 'chat.completion.chunk',
-        created,
-        model,
-        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
-      });
-      res.write('data: [DONE]\n\n');
-      return res.end();
-    }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(
-      JSON.stringify({
-        id,
-        object: 'chat.completion',
-        created,
-        model,
-        choices: [{ index: 0, message: { role: 'assistant', content: msg }, finish_reason: 'stop' }],
-      })
-    );
+    throw lastError || new Error('Grok request failed');
   } catch (e) {
-    const msg = '\n\n[Error: ' + (e.message || String(e)) + ']';
+    const msg = '\n\n[Error: ' + (e.message || String(e)) + (e.upstream ? ' — upstream: ' + e.upstream : '') + ']';
     if (stream) {
       try {
         sseWrite(res, {
@@ -328,12 +464,24 @@ async function handle(opts, res) {
       } catch (_) {}
     }
     try {
-      res.writeHead(502, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ error: { message: e.message || String(e) } }));
+      const headers = { 'Content-Type': 'application/json' };
+      if (e.code === 429) headers['Retry-After'] = String(Math.ceil((e.retryAfterMs || COOLDOWN_MS) / 1000));
+      res.writeHead(e.code === 429 ? 429 : 502, headers);
+      return res.end(
+        JSON.stringify({
+          error: {
+            message: e.message || String(e),
+            type: e.code === 429 ? 'rate_limit_error' : 'upstream_error',
+          },
+        })
+      );
     } catch (_) {}
   }
 }
 
 handle.MODELS = MODELS;
+handle.isConfigured = () => loadCookies().length > 0;
 module.exports = handle;
 module.exports.MODELS = MODELS;
+module.exports.isConfigured = handle.isConfigured;
+module.exports.modelInfo = modelInfo;
