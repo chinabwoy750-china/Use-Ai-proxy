@@ -135,6 +135,58 @@ async function refreshAccess(creds) {
   return access;
 }
 
+
+/** Parse AWS event-stream / hybrid body used by Kiro & CodeWhisperer */
+function parseKiroEventStream(raw) {
+  const text = String(raw || '');
+  const parts = [];
+  // JSON payloads embedded in the binary/event stream
+  const re = /\{\s*"content"\s*:\s*"((?:\\.|[^"\\])*)"\s*,\s*"modelId"\s*:\s*"[^"]*"\s*\}/g;
+  let m;
+  while ((m = re.exec(text))) {
+    try {
+      // JSON-decode the content string escapes
+      const content = JSON.parse('"' + m[1].replace(/"/g, '\\"') + '"');
+      // simpler: reconstruct object
+    } catch (_) {}
+    try {
+      const obj = JSON.parse(m[0]);
+      if (obj && typeof obj.content === 'string') parts.push(obj.content);
+    } catch (_) {
+      // fallback unescape
+      try {
+        parts.push(JSON.parse('"' + m[1] + '"'));
+      } catch {
+        parts.push(m[1]);
+      }
+    }
+  }
+  // Alternate shape: "content":"..." without modelId on same object
+  if (!parts.length) {
+    const re2 = /"content"\s*:\s*"((?:\\.|[^"\\])*)"/g;
+    while ((m = re2.exec(text))) {
+      // only take chunks near assistantResponseEvent
+      const idx = m.index;
+      const window = text.slice(Math.max(0, idx - 120), idx);
+      if (!/assistantResponseEvent/i.test(window) && parts.length === 0) {
+        // still allow if stream is pure json fragments
+      }
+      try {
+        parts.push(JSON.parse('"' + m[1] + '"'));
+      } catch {
+        parts.push(m[1]);
+      }
+    }
+  }
+  return parts.join('');
+}
+
+function isKiroEventStream(raw) {
+  const s = String(raw || '');
+  return /assistantResponseEvent|metadataEvent|:event-type/.test(s);
+}
+
+
 const proxy = makeProxy({
   name: 'kiro',
   models: MODELS,
@@ -198,18 +250,25 @@ const proxy = makeProxy({
     let content = '';
     let ok = false;
     for (const base of BASES) {
+      const headers = {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, application/vnd.amazon.eventstream, */*',
+        Authorization: 'Bearer ' + token,
+        'x-amz-sso-bearer': token,
+        'x-amzn-kiro-agent-mode': 'spec',
+        'x-amzn-codewhisperer-machine-id': 'kiro-desktop',
+        'User-Agent': 'AWS-SDK-JS/3.0.0 kiro-ide/1.0.0',
+        ...(profileArn ? { 'x-amzn-codewhisperer-profile-arn': profileArn } : {}),
+      };
+      // CodeWhisperer streaming target when hitting amazonaws hosts
+      if (/amazonaws\.com/.test(base) && !/generateAssistantResponse/i.test(base)) {
+        headers['x-amz-target'] = 'AmazonCodeWhispererStreamingService.GenerateAssistantResponse';
+        headers['Content-Type'] = 'application/x-amz-json-1.0';
+      }
+
       const r = await fetch(base, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          Authorization: 'Bearer ' + token,
-          'x-amz-sso-bearer': token,
-          'x-amzn-kiro-agent-mode': 'spec',
-          'x-amzn-codewhisperer-machine-id': 'kiro-desktop',
-          'User-Agent': 'AWS-SDK-JS/3.0.0 kiro-ide/1.0.0',
-          ...(profileArn ? { 'x-amzn-codewhisperer-profile-arn': profileArn } : {}),
-        },
+        headers,
         body: JSON.stringify({
           conversationState: {
             currentMessage: {
@@ -233,13 +292,30 @@ const proxy = makeProxy({
         }
         continue;
       }
-      content = text;
-      try {
-        const j = JSON.parse(text);
-        content = j.completion || j.output || j.message || JSON.stringify(j).slice(0, 500);
-      } catch {}
-      ok = true;
-      break;
+
+      if (isKiroEventStream(text)) {
+        content = parseKiroEventStream(text);
+      } else {
+        try {
+          const j = JSON.parse(text);
+          content =
+            j.completion ||
+            j.output ||
+            j.message ||
+            (j.result && (j.result.completion || j.result.message)) ||
+            '';
+          if (!content && typeof j === 'object') content = parseKiroEventStream(text);
+        } catch {
+          content = parseKiroEventStream(text) || text;
+        }
+      }
+
+      if (content && String(content).trim()) {
+        ok = true;
+        break;
+      }
+      // 200 but empty parse — keep trying next base
+      lastErr = 'Kiro empty parse @ ' + base + ' (len=' + text.length + ')';
     }
     if (!ok) throw new Error(lastErr || 'Kiro all endpoints failed');
     ctx.write(String(content));
