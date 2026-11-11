@@ -10,7 +10,7 @@
 const crypto = require('crypto');
 
 const HF_BASE = (process.env.HF_CHAT_URL || 'https://huggingface.co').replace(/\/$/, '');
-const DEFAULT_MODEL = process.env.HF_CHAT_MODEL || 'omni';
+const DEFAULT_MODEL = process.env.HF_CHAT_MODEL || 'Qwen/Qwen2.5-72B-Instruct';
 
 function loadCookiePool() {
   const list = [];
@@ -69,10 +69,10 @@ const MODELS = [
 const MODEL_MAP = {
   huggingface: DEFAULT_MODEL,
   hf: DEFAULT_MODEL,
-  omni: 'omni',
-  'hf-qwen': 'Qwen/Qwen3.8-27B',
-  'hf-deepseek': 'deepseek-ai/DeepSeek-V4.1-Flash',
-  'hf-glm': 'zai-org/GLM-5.3',
+  omni: DEFAULT_MODEL,
+  'hf-qwen': 'Qwen/Qwen2.5-72B-Instruct',
+  'hf-deepseek': 'deepseek-ai/DeepSeek-R1',
+  'hf-glm': 'THUDM/glm-4-9b-chat',
 };
 
 function cookieHeader(raw) {
@@ -124,31 +124,67 @@ function resolveModel(name) {
   return DEFAULT_MODEL;
 }
 
-async function createConversation(cookie, modelId, preprompt) {
-  const body = { model: modelId };
-  if (preprompt) body.preprompt = preprompt;
-  const r = await fetch(`${HF_BASE}/chat/conversation`, {
-    method: 'POST',
-    headers: headers(cookie, { 'Content-Type': 'application/json' }),
-    body: JSON.stringify(body),
-  });
-  const t = await r.text();
-  if (r.status === 429 || r.status === 401) {
-    coolCookie(cookie, 60_000);
-    const err = new Error(`HF create ${r.status}`);
-    err.status = r.status;
-    throw err;
-  }
-  if (!r.ok) throw new Error(`HF create conversation ${r.status}: ${t.slice(0, 200)}`);
-  let j;
+function extractConversationId(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  // pure JSON
   try {
-    j = JSON.parse(t);
-  } catch {
-    throw new Error('HF create conversation: bad JSON');
+    const j = JSON.parse(raw);
+    return j.conversationId || j.id || j.conversation_id || null;
+  } catch (_) {}
+  // HTML / mixed — search for UUID-like conversation id
+  const m =
+    raw.match(/"conversationId"\s*:\s*"([^"]+)"/) ||
+    raw.match(/conversationId=([a-f0-9-]{8,})/i) ||
+    raw.match(/\/chat\/conversation\/([a-f0-9-]{8,})/i);
+  return m ? m[1] : null;
+}
+
+async function createConversation(cookie, modelId, preprompt) {
+  const body = { model: modelId || DEFAULT_MODEL };
+  if (preprompt) body.preprompt = preprompt;
+
+  const urls = [
+    `${HF_BASE}/chat/conversation`,
+    `${HF_BASE}/chat/api/v2/conversations`,
+    `${HF_BASE}/chat/api/conversation`,
+  ];
+
+  let lastDetail = '';
+  for (const url of urls) {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: headers(cookie, {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      }),
+      body: JSON.stringify(body),
+    });
+    const text = await r.text();
+    if (r.status === 429 || r.status === 401 || r.status === 403) {
+      coolCookie(cookie, 60_000);
+      const err = new Error(
+        `HF create ${r.status} — cookie expired or blocked. Re-capture hf-chat on huggingface.co/chat`
+      );
+      err.status = r.status;
+      throw err;
+    }
+
+    const id = extractConversationId(text);
+    if (id) return id;
+
+    // HTML login / CF
+    if (/just a moment|cloudflare|log in|sign in/i.test(text)) {
+      lastDetail =
+        `HF create ${r.status} @ ${url} — login/CF page (cookie invalid). Re-capture HF_CHAT_COOKIE`;
+      continue;
+    }
+
+    lastDetail =
+      `HF create ${r.status} @ ${url}: ` +
+      text.replace(/\s+/g, ' ').slice(0, 160);
   }
-  const id = j.conversationId || j.id;
-  if (!id) throw new Error('HF create conversation: no conversationId');
-  return id;
+  throw new Error(lastDetail || 'HF create conversation: bad JSON / no conversationId');
 }
 
 module.exports = async function huggingfaceProxy(opts, res) {
