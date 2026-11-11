@@ -10,6 +10,31 @@ const BASES = (
   'https://q.us-east-1.amazonaws.com/generateAssistantResponse,https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse,https://runtime.us-east-1.kiro.dev/generateAssistantResponse'
 ).split(',').map((s) => s.trim()).filter(Boolean);
 
+/** Builder ID / IDC tokens are rejected by runtime.*.kiro.dev (403 bearer invalid). */
+function basesForAuth(authMethod, clientId, clientSecret) {
+  const isBuilder =
+    authMethod === 'builder-id' ||
+    authMethod === 'idc' ||
+    !!(clientId && clientSecret);
+  const isSocial = authMethod === 'google' || authMethod === 'github' || authMethod === 'social';
+  let list = BASES.slice();
+  if (isBuilder) {
+    list = list.filter((u) => !/runtime\.[^/]*kiro\.dev/i.test(u));
+    // Prefer Amazon surfaces
+    list.sort((a, b) => {
+      const score = (u) => (/q\.[^/]*amazonaws/.test(u) ? 0 : /codewhisperer\.[^/]*amazonaws/.test(u) ? 1 : 2);
+      return score(a) - score(b);
+    });
+  }
+  if (!list.length) {
+    list = [
+      'https://q.us-east-1.amazonaws.com/generateAssistantResponse',
+      'https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse',
+    ];
+  }
+  return list;
+}
+
 const KIRO_MODEL_IDS = [
   'claude-opus-5.5', 'claude-opus-5.5-thinking', 'claude-opus-5.5-agentic', 'claude-opus-5.5-thinking-agentic',
   'claude-opus-5', 'claude-opus-5-thinking', 'claude-opus-5-agentic', 'claude-opus-5-thinking-agentic',
@@ -249,7 +274,8 @@ const proxy = makeProxy({
     let lastErr = '';
     let content = '';
     let ok = false;
-    for (const base of BASES) {
+    const tryBases = basesForAuth(creds.authMethod, creds.clientId, creds.clientSecret);
+    for (const base of tryBases) {
       const headers = {
         'Content-Type': 'application/json',
         Accept: 'application/json, application/vnd.amazon.eventstream, */*',
@@ -285,6 +311,9 @@ const proxy = makeProxy({
       const text = await r.text();
       if (!r.ok) {
         lastErr = 'Kiro ' + r.status + ' @ ' + base + ': ' + text.slice(0, 200);
+        if (r.status === 403 && /bearer token.*invalid/i.test(text) && /kiro\.dev/i.test(base)) {
+          lastErr += ' — Builder ID tokens cannot use runtime.kiro.dev; use Amazon Q/CodeWhisperer endpoints (auto-skipped on next deploy)';
+        }
         if ((r.status === 401 || r.status === 403) && creds.refresh) {
           try {
             await refreshAccess(loadCreds());
