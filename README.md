@@ -55,6 +55,23 @@ Aliases: `grok-4`, `grok-3`, `grok-2`, `grok-4.1`, `grok-4.20`, `grok-4.3`, `gro
 small window; premium modes need SuperGrok). The proxy retries once, rotates through
 `GROK_COOKIES` / Admin accounts, and returns HTTP 429 with `Retry-After`.
 
+Every final failure now says *why*, so a stale cookie is not mistaken for quota:
+
+- cookie without `sso`/`sso-rw` → fails immediately (HTTP 401, `auth_error`)
+- grok.com says the cookie is not signed in → HTTP 401, `auth_error`
+- cookie is signed in and the quota is gone → HTTP 429 with the live rate-limit
+  windows and plan in the message
+
+Check an account without sending a chat message:
+
+```bash
+curl -H "Authorization: Bearer $ADMIN_PASSWORD" \
+  https://myproxy-use.onrender.com/api/providers/grok/diag
+```
+
+It returns each cookie's flags (`sso`, `cf_clearance`), cooldown state, sign-in
+status, rate-limit windows, and plan.
+
 | Env | Default | Meaning |
 |-----|---------|---------|
 | `GROK_COOKIES` | — | Several cookies separated by `\|\|\|` (cookies contain commas) |

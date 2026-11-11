@@ -373,6 +373,19 @@ const server = http.createServer(async (req, res) => {
     
     
     
+    if (pathname === '/api/providers/grok/diag' && req.method === 'GET') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason || 'unauthorized' });
+      if (!grokProxy || typeof grokProxy.diag !== 'function') {
+        return sendJson(res, 500, { error: 'grok proxy not loaded' });
+      }
+      try {
+        return sendJson(res, 200, await grokProxy.diag());
+      } catch (e) {
+        return sendJson(res, 500, { error: e.message || String(e) });
+      }
+    }
+
     if (pathname === '/api/providers/kiro/models' && req.method === 'GET') {
       const ids = (kiroProxy && kiroProxy.KIRO_MODEL_IDS) || [];
       const data = [{ id: 'kiro', object: 'model', owned_by: 'kiro' }].concat(

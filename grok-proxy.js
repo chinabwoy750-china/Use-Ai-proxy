@@ -8,7 +8,8 @@
  */
 const crypto = require('crypto');
 
-const GROK_NEW = process.env.GROK_URL || 'https://grok.com/rest/app-chat/conversations/new';
+const GROK_BASE = process.env.GROK_BASE || 'https://grok.com';
+const GROK_NEW = process.env.GROK_URL || GROK_BASE + '/rest/app-chat/conversations/new';
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
@@ -146,6 +147,101 @@ function sseWrite(res, obj) {
   res.write(`data: ${JSON.stringify(obj)}\n\n`);
 }
 
+// ── Diagnostics ─────────────────────────────────────────────────────────────
+function cookieFlags(cookie) {
+  const c = String(cookie || '');
+  return {
+    sso: /(?:^|;\s*)sso=/.test(c) || /(?:^|;\s*)sso-rw=/.test(c),
+    cf: /(?:^|;\s*)cf_clearance=/.test(c),
+  };
+}
+
+function baseHeaders(cookie) {
+  return {
+    Accept: '*/*',
+    'User-Agent': UA,
+    Origin: 'https://grok.com',
+    Referer: 'https://grok.com/',
+    Cookie: cookie,
+    'Accept-Language': 'en-US,en;q=0.9',
+    'x-xai-request-id': crypto.randomUUID(),
+  };
+}
+
+async function getJson(path, cookie, ms = 12000) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), ms);
+  try {
+    const r = await fetch(GROK_BASE + path, { headers: baseHeaders(cookie), signal: ac.signal });
+    const text = await r.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch (_) {}
+    return { status: r.status, json, text };
+  } catch (e) {
+    return { status: 0, json: null, text: e.message || String(e) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function summarizeLimits(json) {
+  if (!json || typeof json !== 'object') return '';
+  const windows = json.windows || json.limits || json.rateLimits || json.rate_limits;
+  if (Array.isArray(windows)) {
+    return windows
+      .slice(0, 4)
+      .map((w) => {
+        if (!w || typeof w !== 'object') return String(w);
+        const name = w.name || w.kind || w.type || w.window || 'window';
+        const rem = w.remaining ?? w.remainingQueries ?? w.left ?? w.quota;
+        const tot = w.total ?? w.totalQueries ?? w.limit ?? w.max;
+        const reset = w.resetAt || w.reset_at || w.resetTime || w.resetsAt;
+        return `${name}: ${rem ?? '?'}/${tot ?? '?'}${reset ? ' reset ' + reset : ''}`;
+      })
+      .join('; ');
+  }
+  return JSON.stringify(json).slice(0, 200);
+}
+
+async function probeAccount(cookie) {
+  const flags = cookieFlags(cookie);
+  const [settings, limits, subs] = await Promise.all([
+    getJson('/rest/user-settings', cookie),
+    getJson('/rest/rate-limits', cookie),
+    getJson('/rest/subscriptions', cookie),
+  ]);
+  const sub = subs.json && (subs.json.tier || subs.json.plan || subs.json.subscriptionTier);
+  return {
+    signedIn: settings.status === 200,
+    settingsStatus: settings.status,
+    limitsStatus: limits.status,
+    // Only trust the body when the endpoint actually answered 200.
+    limits:
+      limits.status === 200
+        ? summarizeLimits(limits.json) || ''
+        : '',
+    plan: subs.status === 200 ? String(sub || 'unknown') : '',
+    subscriptionsStatus: subs.status,
+    cookie: flags,
+  };
+}
+
+function diagnosticsLine(d) {
+  if (!d) return '';
+  const bits = [];
+  if (d.settingsStatus === 0) bits.push('probe failed (network error reaching grok.com)');
+  else if (d.signedIn) bits.push('signed-in');
+  else bits.push(`NOT signed-in (user-settings ${d.settingsStatus})`);
+  if (!d.cookie.sso) bits.push('cookie has NO sso/sso-rw');
+  if (!d.cookie.cf) bits.push('no cf_clearance');
+  if (d.limits) bits.push('limits: ' + d.limits);
+  else if (d.limitsStatus && d.limitsStatus !== 200) bits.push(`rate-limits ${d.limitsStatus}`);
+  if (d.plan) bits.push('plan: ' + d.plan);
+  return ' Diagnostics: ' + bits.join('; ') + '.';
+}
+
 /** Streaming token only (not final message, not thinking) */
 function extractStreamToken(ev, depth = 0) {
   if (ev == null || depth > 6) return '';
@@ -251,16 +347,7 @@ function rateLimitMessage(info, retryAfter) {
 async function callGrok(cookie, body) {
   const r = await fetch(GROK_NEW, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: '*/*',
-      'User-Agent': UA,
-      Origin: 'https://grok.com',
-      Referer: 'https://grok.com/',
-      Cookie: cookie,
-      'Accept-Language': 'en-US,en;q=0.9',
-      'x-xai-request-id': crypto.randomUUID(),
-    },
+    headers: Object.assign({ 'Content-Type': 'application/json' }, baseHeaders(cookie)),
     body: JSON.stringify(body),
   });
   const text = await r.text();
@@ -324,120 +411,186 @@ async function handle(opts, res) {
     enableSideBySide: false,
   };
 
+  // A cookie without sso/sso-rw is anonymous — grok.com will always 429 those,
+  // so fail fast instead of burning retries and reporting a misleading quota error.
+  const signed = cookies.filter((c) => cookieFlags(c).sso);
+  if (!signed.length) {
+    const msg =
+      '\n\n[Error: Grok cookie is missing sso/sso-rw — the saved value is not a signed-in grok.com cookie. ' +
+      'Re-capture it from a logged-in grok.com tab (DevTools → Network → any /rest/ request → Cookie header).]';
+    if (stream) {
+      sseWrite(res, {
+        id,
+        object: 'chat.completion.chunk',
+        created,
+        model,
+        choices: [{ index: 0, delta: { content: msg }, finish_reason: null }],
+      });
+      sseWrite(res, {
+        id,
+        object: 'chat.completion.chunk',
+        created,
+        model,
+        choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+      });
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    }
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: { message: msg, type: 'auth_error' } }));
+  }
+
   // Prefer cookies that are not cooling down; fall back to all if every one is.
-  const ready = cookies.filter((c) => coolingLeft(c) === 0);
-  const order = ready.length ? ready : cookies;
+  const ready = signed.filter((c) => coolingLeft(c) === 0);
+  const order = ready.length ? ready : signed;
+
+  // Grok applies tighter limits to temporary (incognito) chats, so after every
+  // cookie is rate limited we try once more with a persistent chat.
+  const bodies = [body, Object.assign({}, body, { temporary: false })];
 
   let lastError = null;
   let lastRetryAfter = 0;
+  let lastCookie = order[0] || '';
 
   try {
-    for (let ci = 0; ci < order.length; ci++) {
-      const cookie = order[ci];
+    for (let bi = 0; bi < bodies.length; bi++) {
+      const bodyToSend = bodies[bi];
 
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        let result;
-        try {
-          result = await callGrok(cookie, body);
-        } catch (e) {
-          lastError = new Error(`Grok network error: ${e.message || String(e)}`);
-          break; // try next cookie
-        }
+      for (let ci = 0; ci < order.length; ci++) {
+        const cookie = order[ci];
+        lastCookie = cookie;
 
-        const { r, text } = result;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+          let result;
+          try {
+            result = await callGrok(cookie, bodyToSend);
+          } catch (e) {
+            lastError = new Error(`Grok network error: ${e.message || String(e)}`);
+            break; // try next cookie
+          }
 
-        if (r.ok) {
-          if (/just a moment|cf-browser-verification|cloudflare/i.test(text) && text.length < 5000) {
+          const { r, text } = result;
+
+          if (r.ok) {
+            if (/just a moment|cf-browser-verification|cloudflare/i.test(text) && text.length < 5000) {
+              lastError = new Error(
+                'Cloudflare HTML instead of chat stream — re-capture cookies or use a non-datacenter IP'
+              );
+              break;
+            }
+
+            const { full } = parseStreamBody(text);
+            if (!full) {
+              const sample = String(text || '')
+                .replace(/\s+/g, ' ')
+                .slice(0, 180);
+              lastError = new Error(
+                'Grok empty reply' +
+                  (sample ? ' — upstream: ' + sample : ' — no parseable tokens; try re-capture cookie')
+              );
+              break;
+            }
+
+            if (stream) {
+              sseWrite(res, {
+                id,
+                object: 'chat.completion.chunk',
+                created,
+                model,
+                choices: [{ index: 0, delta: { content: full }, finish_reason: null }],
+              });
+              sseWrite(res, {
+                id,
+                object: 'chat.completion.chunk',
+                created,
+                model,
+                choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+              });
+              res.write('data: [DONE]\n\n');
+              return res.end();
+            }
+            res.writeHead(200, {
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            });
+            return res.end(
+              JSON.stringify({
+                id,
+                object: 'chat.completion',
+                created,
+                model,
+                choices: [
+                  { index: 0, message: { role: 'assistant', content: full }, finish_reason: 'stop' },
+                ],
+              })
+            );
+          }
+
+          if (isRateLimited(r.status, text)) {
+            lastRetryAfter = retryAfterMs(r) || lastRetryAfter;
+            markCooling(cookie, lastRetryAfter || COOLDOWN_MS, '429');
+            const err = new Error(rateLimitMessage(info, lastRetryAfter));
+            err.code = 429;
+            err.retryAfterMs = lastRetryAfter || COOLDOWN_MS;
+            err.upstream = text.slice(0, 220);
+            lastError = err;
+            if (attempt < MAX_RETRIES) {
+              await sleep(1500 * (attempt + 1));
+              continue; // retry same cookie once before rotating
+            }
+            break; // rotate to next cookie
+          }
+
+          if (/just a moment|cf-browser-verification|cloudflare|attention required/i.test(text)) {
             lastError = new Error(
-              'Cloudflare HTML instead of chat stream — re-capture cookies or use a non-datacenter IP'
+              'Cloudflare challenge — re-capture GROK_COOKIE with extension (include cf_clearance). Render IP may be blocked.'
             );
             break;
           }
 
-          const { full } = parseStreamBody(text);
-          if (!full) {
-            const sample = String(text || '')
-              .replace(/\s+/g, ' ')
-              .slice(0, 180);
+          if (isAuthFailure(r.status, text)) {
             lastError = new Error(
-              'Grok empty reply' +
-                (sample ? ' — upstream: ' + sample : ' — no parseable tokens; try re-capture cookie')
+              `Grok auth failed (${r.status}) — re-capture the Cookie (sso + cf_clearance).`
             );
             break;
           }
 
-          if (stream) {
-            sseWrite(res, {
-              id,
-              object: 'chat.completion.chunk',
-              created,
-              model,
-              choices: [{ index: 0, delta: { content: full }, finish_reason: null }],
-            });
-            sseWrite(res, {
-              id,
-              object: 'chat.completion.chunk',
-              created,
-              model,
-              choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
-            });
-            res.write('data: [DONE]\n\n');
-            return res.end();
-          }
-          res.writeHead(200, {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-          });
-          return res.end(
-            JSON.stringify({
-              id,
-              object: 'chat.completion',
-              created,
-              model,
-              choices: [
-                { index: 0, message: { role: 'assistant', content: full }, finish_reason: 'stop' },
-              ],
-            })
-          );
-        }
-
-        if (isRateLimited(r.status, text)) {
-          lastRetryAfter = retryAfterMs(r) || lastRetryAfter;
-          markCooling(cookie, lastRetryAfter || COOLDOWN_MS, '429');
-          const err = new Error(rateLimitMessage(info, lastRetryAfter));
-          err.code = 429;
-          err.retryAfterMs = lastRetryAfter || COOLDOWN_MS;
-          err.upstream = text.slice(0, 220);
-          lastError = err;
-          if (attempt < MAX_RETRIES) {
-            await sleep(1500 * (attempt + 1));
-            continue; // retry same cookie once before rotating
-          }
-          break; // rotate to next cookie
-        }
-
-        if (/just a moment|cf-browser-verification|cloudflare|attention required/i.test(text)) {
-          lastError = new Error(
-            'Cloudflare challenge — re-capture GROK_COOKIE with extension (include cf_clearance). Render IP may be blocked.'
-          );
+          lastError = new Error(`Grok ${r.status}: ${text.slice(0, 220)}`);
           break;
         }
 
-        if (isAuthFailure(r.status, text)) {
-          lastError = new Error(
-            `Grok auth failed (${r.status}) — re-capture the Cookie (sso + cf_clearance).`
-          );
+        // If the failure is not rate-limit/auth related, don't burn other accounts.
+        if (
+          lastError &&
+          lastError.code !== 429 &&
+          !/auth failed|Cloudflare|empty reply|network error/i.test(lastError.message)
+        ) {
           break;
         }
-
-        lastError = new Error(`Grok ${r.status}: ${text.slice(0, 220)}`);
-        break;
       }
 
-      // If the failure is not rate-limit/auth related, don't burn other accounts.
-      if (lastError && lastError.code !== 429 && !/auth failed|Cloudflare|empty reply|network error/i.test(lastError.message)) {
-        break;
-      }
+      // Only the rate-limit path is worth retrying with a persistent chat.
+      if (!lastError || lastError.code !== 429 || bodyToSend.temporary === false) break;
+      await sleep(1200);
+    }
+
+    // Attach account diagnostics so the client can tell "expired cookie" from
+    // "real quota exhausted" without digging through Render logs.
+    if (lastError && lastError.code === 429) {
+      try {
+        const d = await probeAccount(lastCookie);
+        lastError.diagnostics = d;
+        if (d.settingsStatus !== 0 && !d.signedIn) {
+          // grok.com rejected the cookie: this is auth, not quota.
+          lastError.code = 401;
+          lastError.message =
+            `Grok cookie is not signed in (user-settings ${d.settingsStatus}) — ` +
+            're-capture GROK_COOKIE from a logged-in grok.com tab.' +
+            diagnosticsLine(d);
+        } else {
+          lastError.message += diagnosticsLine(d);
+        }
+      } catch (_) {}
     }
 
     throw lastError || new Error('Grok request failed');
@@ -466,12 +619,13 @@ async function handle(opts, res) {
     try {
       const headers = { 'Content-Type': 'application/json' };
       if (e.code === 429) headers['Retry-After'] = String(Math.ceil((e.retryAfterMs || COOLDOWN_MS) / 1000));
-      res.writeHead(e.code === 429 ? 429 : 502, headers);
+      const status = e.code === 401 ? 401 : e.code === 429 ? 429 : 502;
+      res.writeHead(status, headers);
       return res.end(
         JSON.stringify({
           error: {
             message: e.message || String(e),
-            type: e.code === 429 ? 'rate_limit_error' : 'upstream_error',
+            type: e.code === 401 ? 'auth_error' : e.code === 429 ? 'rate_limit_error' : 'upstream_error',
           },
         })
       );
@@ -481,7 +635,48 @@ async function handle(opts, res) {
 
 handle.MODELS = MODELS;
 handle.isConfigured = () => loadCookies().length > 0;
+
+/**
+ * Admin diagnostics: is each cookie signed in, what does grok.com report for
+ * rate limits / plan, and is it currently cooling down?
+ */
+async function diag() {
+  const cookies = loadCookies();
+  if (!cookies.length) return { configured: false, accounts: 0, details: [] };
+
+  const details = [];
+  for (let i = 0; i < cookies.length; i++) {
+    const c = cookies[i];
+    const flags = cookieFlags(c);
+    let probe = null;
+    if (flags.sso) {
+      try {
+        probe = await probeAccount(c);
+      } catch (e) {
+        probe = { error: e.message || String(e) };
+      }
+    }
+    details.push({
+      index: i,
+      key: cookieKey(c),
+      cookie: flags,
+      coolingMs: coolingLeft(c),
+      probe,
+    });
+  }
+
+  return {
+    configured: true,
+    accounts: cookies.length,
+    models: MODELS.length,
+    retries: MAX_RETRIES,
+    cooldownMs: COOLDOWN_MS,
+    details,
+  };
+}
+
 module.exports = handle;
 module.exports.MODELS = MODELS;
 module.exports.isConfigured = handle.isConfigured;
 module.exports.modelInfo = modelInfo;
+module.exports.diag = diag;
