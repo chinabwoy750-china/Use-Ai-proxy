@@ -517,7 +517,9 @@ async function loadEndpointModels(p){
       const j=await fetch('/api/providers/kiro/models').then(r=>r.json());
       data=Array.isArray(j.data)?j.data:[];
     } else {
-      const j=await fetch('/v1/models').then(r=>r.json());
+      // `?all=1` keeps the full catalog so models can be imported before a
+      // provider has credentials; public /v1/models only lists configured ones.
+      const j=await fetch('/v1/models?all=1').then(r=>r.json());
       data=Array.isArray(j.data)?j.data:[];
       const id=p.id.toLowerCase();
       const filtered=data.filter(x=>String(x.id||'').toLowerCase().includes(id));
@@ -537,7 +539,7 @@ function renderImport(p){
   return `<div class="modal-bg" id="imbg"><div class="modal">
     <button class="x" id="imx">${ICO.close}</button>
     <h3>Import models · ${p.name}</h3>
-    <p class="muted" style="font-size:12px">From <code>/v1/models</code></p>
+    <p class="muted" style="font-size:12px">From <code>/v1/models?all=1</code></p>
     <div style="display:flex;gap:8px;margin-bottom:10px">
       <button class="btn ghost" id="imrefresh">${ICO.refresh} Refresh</button>
       <button class="btn ghost" id="imall">Select all</button>

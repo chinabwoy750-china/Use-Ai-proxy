@@ -19,7 +19,8 @@ OpenAI-compatible multi-provider reverse proxy with admin dashboard.
 ## Endpoints
 
 - `GET /health`
-- `GET /v1/models`
+- `GET /v1/models` — only providers that currently have credentials (or are keyless-enabled)
+- `GET /v1/models?all=1` — full catalog, including unconfigured providers
 - `POST /v1/chat/completions`
 - `POST /v1/images/generations` (UC)
 - `GET /admin` — dashboard (requires `ADMIN_PASSWORD`)

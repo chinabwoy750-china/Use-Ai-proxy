@@ -91,6 +91,47 @@ async function runOpenAICompatible({ base, key, body, headers = {}, write, end }
   end();
 }
 
+function builtinKeys(cfg) {
+  return parseKeys(process.env[cfg.env] || process.env[cfg.env.replace(/S$/, '')] || '');
+}
+
+function builtinBase(id, cfg) {
+  return process.env['GENERIC_' + id.toUpperCase().replace(/-/g, '_') + '_BASE'] || cfg.base || '';
+}
+
+function isBuiltinConfigured(id, cfg) {
+  return !!builtinBase(id, cfg) && builtinKeys(cfg).length > 0;
+}
+
+function customKeys(c) {
+  return Array.isArray(c.keys) ? c.keys : parseKeys(c.key || c.apiKey || '');
+}
+
+/** Slugs that actually have a base URL + credentials right now. */
+function configuredModels() {
+  const out = [];
+  for (const [id, cfg] of Object.entries(BUILTIN)) {
+    if (isBuiltinConfigured(id, cfg)) out.push(id);
+  }
+  for (const c of loadCustomEndpoints()) {
+    const id = String(c.id || '');
+    if (id && c.base && customKeys(c).length) out.push(id);
+  }
+  return out;
+}
+
+function isModelConfigured(slug) {
+  const m = String(slug || '').toLowerCase();
+  for (const c of loadCustomEndpoints()) {
+    const id = String(c.id || '').toLowerCase();
+    if (m === id || m.startsWith(id + '/') || m.startsWith(id + '-')) {
+      return !!c.base && customKeys(c).length > 0;
+    }
+  }
+  const cfg = BUILTIN[m];
+  return cfg ? isBuiltinConfigured(m, cfg) : false;
+}
+
 const proxy = makeProxy({
   name: 'generic-openai',
   models: Object.keys(BUILTIN).map((slug) => ({ slug })),
@@ -149,4 +190,6 @@ const proxy = makeProxy({
 proxy.resolveTarget = resolveTarget;
 proxy.BUILTIN = BUILTIN;
 proxy.loadCustomEndpoints = loadCustomEndpoints;
+proxy.configuredModels = configuredModels;
+proxy.isModelConfigured = isModelConfigured;
 module.exports = proxy;

@@ -150,11 +150,41 @@ function sendJson(res, code, obj) {
   res.end(JSON.stringify(obj));
 }
 
-function collectModels() {
+// Provider → configured?  Env flags are authoritative (bootstrap/admin saves write
+// to process.env), so this stays accurate after a live Admin "Save".
+function isProviderConfigured(owner, mod) {
+  if (!mod) return false;
+  let flags = {};
+  try {
+    flags = config.getPublicProviders() || {};
+  } catch (_) {}
+  if (Object.prototype.hasOwnProperty.call(flags, owner)) return !!flags[owner];
+  // Providers without an env flag: trust the module's own check when it has one.
+  if (typeof mod.isConfigured === 'function') {
+    try {
+      return !!mod.isConfigured();
+    } catch (_) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function collectModels({ includeUnconfigured = false } = {}) {
   const models = [];
   const add = (mod, owner) => {
     if (!mod) return;
-    for (const m of mod.MODELS || []) {
+    if (!includeUnconfigured && !isProviderConfigured(owner, mod)) return;
+    let list = mod.MODELS || [];
+    // Some providers (e.g. the generic OpenAI-compatible one) expose a whole
+    // catalog but only a subset has credentials. Let them narrow the list.
+    if (!includeUnconfigured && typeof mod.configuredModels === 'function') {
+      try {
+        const allowed = new Set(mod.configuredModels().map(String));
+        list = list.filter((m) => allowed.has(String(m.slug || m.id || m)));
+      } catch (_) {}
+    }
+    for (const m of list) {
       const id = m.slug || m.id || m;
       models.push({ id, object: 'model', created: 0, owned_by: owner });
     }
@@ -578,7 +608,11 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === '/v1/models' && req.method === 'GET') {
-      return sendJson(res, 200, { object: 'list', data: collectModels() });
+      const all = url.searchParams.get('all') === '1' || url.searchParams.get('all') === 'true';
+      return sendJson(res, 200, {
+        object: 'list',
+        data: collectModels({ includeUnconfigured: all }),
+      });
     }
 
     if (pathname === '/v1/images/generations' && req.method === 'POST') {
