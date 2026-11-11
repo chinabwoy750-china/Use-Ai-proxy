@@ -8,28 +8,36 @@ const crypto = require('crypto');
 
 const BASE = (process.env.OPENCODE_URL || 'https://opencode.ai').replace(/\/$/, '');
 const CHAT_URL = `${BASE}/inference/openai/v1/chat/completions`;
+const MODELS_URL = `${BASE}/zen/v1/models`;
 const OPENCODE_UA = 'opencode/1.18.31';
 const OPENCODE_CLIENT = 'desktop';
 const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 
-const MODELS = [
-  { slug: 'opencode', id: 'big-pickle' },
-  { slug: 'opencode-big-pickle', id: 'big-pickle' },
-  { slug: 'big-pickle', id: 'big-pickle' },
-  { slug: 'opencode-beam', id: 'beam-free' },
-  { slug: 'beam-free', id: 'beam-free' },
-  { slug: 'opencode-flint', id: 'flint-40b-free' },
-  { slug: 'flint-40b-free', id: 'flint-40b-free' },
-  { slug: 'opencode-mimo', id: 'mimo-v2.6-flash-free' },
-  { slug: 'mimo-v2.6-flash-free', id: 'mimo-v2.6-flash-free' },
-  { slug: 'opencode-deepseek', id: 'deepseek-v4.1-flash-free' },
-  { slug: 'deepseek-v4.1-flash-free', id: 'deepseek-v4.1-flash-free' },
-  { slug: 'opencode-glm', id: 'glm-5.3-flash-free' },
-  { slug: 'glm-5.3-flash-free', id: 'glm-5.3-flash-free' },
-  { slug: 'opencode-nemotron', id: 'nemotron-3.5-lightning-free' },
-  { slug: 'nemotron-3.5-lightning-free', id: 'nemotron-3.5-lightning-free' },
-  { slug: 'nemotron-3.5-super-vl-free', id: 'nemotron-3.5-super-vl-free' },
+// Verified against https://opencode.ai/zen/v1/models — every entry below has
+// cost.text.input.price === 0 and cost.text.output.price === 0. Paid models are
+// never exposed. The list refreshes itself from that endpoint every 6h.
+const FREE_FALLBACK = [
+  'big-pickle',
+  'beam-free',
+  'deepseek-v4.1-flash-free',
+  'flint-40b-free',
+  'glm-5.3-flash-free',
+  'iceman-free',
+  'inkling-2-small-free',
+  'longcat-2.5-free',
+  'mimo-v2.6-flash-free',
+  'minimax-m3.1-flash-free',
+  'nemotron-3.5-lightning-free',
+  'nemotron-3.5-super-vl-free',
 ];
+
+function buildModels(ids) {
+  const list = ids.includes('big-pickle') ? ids : ['big-pickle'].concat(ids);
+  return [{ slug: 'opencode', id: list[0] }].concat(list.map((id) => ({ slug: id, id })));
+}
+
+let MODELS = buildModels(FREE_FALLBACK);
+
 
 function modelInfo(name) {
   const m = String(name || '')
@@ -138,6 +146,7 @@ async function handle(opts, res) {
     const dec = new TextDecoder();
     let buf = '';
     let got = false;
+    let buffered = '';
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -159,6 +168,10 @@ async function handle(opts, res) {
         const content = delta.content || '';
         const reasoning = delta.reasoning_content || delta.reasoning || '';
         if (content || reasoning) got = true;
+        if (!stream) {
+          if (content) buffered += content;
+          continue;
+        }
         if (stream && (content || reasoning)) {
           const d = {};
           if (content) d.content = content;
@@ -205,8 +218,18 @@ async function handle(opts, res) {
       res.write('data: [DONE]\n\n');
       return res.end();
     }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ id, object: 'chat.completion', choices: [] }));
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    return res.end(
+      JSON.stringify({
+        id,
+        object: 'chat.completion',
+        created,
+        model,
+        choices: [
+          { index: 0, message: { role: 'assistant', content: buffered }, finish_reason: 'stop' },
+        ],
+      })
+    );
   } catch (err) {
     const msg = `\n\n[Error: ${err.message || err}]`;
     if (stream) {
@@ -232,4 +255,41 @@ async function handle(opts, res) {
 }
 
 handle.MODELS = MODELS;
+
+// Refresh the free catalogue in the background so /v1/models never goes stale.
+// Only zero-price models are kept; a fetch failure leaves the verified list.
+async function refreshFreeModels() {
+  try {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 15000);
+    const r = await fetch(MODELS_URL, {
+      headers: { 'User-Agent': OPENCODE_UA, Accept: 'application/json' },
+      signal: ac.signal,
+    });
+    clearTimeout(timer);
+    if (!r.ok) return;
+    const j = await r.json();
+    const ids = (Array.isArray(j?.data) ? j.data : [])
+      .filter((m) => {
+        const p = m && m.cost && m.cost.text;
+        const input = p && p.input ? Number(p.input.price) : NaN;
+        const output = p && p.output ? Number(p.output.price) : NaN;
+        return input === 0 && output === 0;
+      })
+      .map((m) => String(m.id))
+      .filter(Boolean);
+    if (ids.length) {
+      MODELS = buildModels(ids);
+      handle.MODELS = MODELS;
+      module.exports.MODELS = MODELS;
+    }
+  } catch (_) {}
+}
+
+refreshFreeModels();
+setInterval(refreshFreeModels, 6 * 60 * 60 * 1000).unref();
+
 module.exports = handle;
+module.exports.MODELS = MODELS;
+module.exports.modelInfo = modelInfo;
+module.exports.refreshFreeModels = refreshFreeModels;

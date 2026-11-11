@@ -124,6 +124,13 @@ function routeProxy(model) {
     return huggingfaceProxy;
   }
 
+  // Providers whose model ids do not carry the provider prefix (e.g. big-pickle,
+  // openai-fast) need an exact slug match before the DeepSeek fallback.
+  for (const mod of [opencodeProxy, pollinationsProxy]) {
+    if (!mod || !Array.isArray(mod.MODELS)) continue;
+    if (mod.MODELS.some((x) => String((x && (x.slug || x.id)) || x).toLowerCase() === m)) return mod;
+  }
+
   return deepseekProxy;
 }
 

@@ -138,6 +138,7 @@ function makeProxy({ name, models, getCookie, run }) {
     const stream = opts.stream !== false;
     const { id, created, model } = newIds(opts.model || models[0]?.slug || name);
     let started = false;
+    let buffered = '';
     try {
       if (stream) {
         startStream(res, model, id, created);
@@ -158,11 +159,29 @@ function makeProxy({ name, models, getCookie, run }) {
         started,
         write(text) {
           if (stream) streamText(res, model, id, created, text);
+          else buffered += String(text == null ? '' : text);
         },
         end() {
           if (stream) endStream(res, model, id, created);
         },
       });
+      if (!stream) {
+        res.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+        });
+        res.end(
+          JSON.stringify({
+            id,
+            object: 'chat.completion',
+            created,
+            model,
+            choices: [
+              { index: 0, message: { role: 'assistant', content: buffered }, finish_reason: 'stop' },
+            ],
+          })
+        );
+      }
     } catch (err) {
       if (stream) streamError(res, model, id, created, err, started);
       else {

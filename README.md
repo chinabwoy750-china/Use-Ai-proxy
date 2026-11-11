@@ -11,6 +11,7 @@ OpenAI-compatible multi-provider reverse proxy with admin dashboard.
 | `perplexity`, `pplx-*` | Perplexity Web | `PERPLEXITY_COOKIE` |
 | `grok*` | Grok Web | `GROK_COOKIE` |
 | `opencode*` | OpenCode Free | `OPENCODE_ENABLED=1` (no key) |
+| `pollinations*`, `openai-fast`, `gpt-oss*` | Pollinations (free tier) | none |
 | `uc*` | UC Web (image) | `UC_COOKIE` (must include `__client`) |
 | `veo*` | Veo Free | `VEO_ENABLED=1` |
 | `codestral*`, `mistral*` | Mistral | `MISTRAL_API_KEY` |
@@ -78,6 +79,26 @@ status, rate-limit windows, and plan.
 | `GROK_RETRIES` | `1` | Retries per cookie before rotating |
 | `GROK_COOLDOWN_MS` | `300000` | How long a rate-limited cookie is skipped |
 
+## Free models only
+
+Model lists are pulled from each provider's own catalogue and filtered to what
+costs **$0** — paid models are never listed:
+
+- **OpenCode Zen** — `GET https://opencode.ai/zen/v1/models`, keeps entries where
+  `cost.text.input.price === 0` and `cost.text.output.price === 0`
+  (refreshed every 6h). Currently 12: `big-pickle`, `beam-free`,
+  `deepseek-v4.1-flash-free`, `flint-40b-free`, `glm-5.3-flash-free`,
+  `iceman-free`, `inkling-2-small-free`, `longcat-2.5-free`,
+  `mimo-v2.6-flash-free`, `minimax-m3.1-flash-free`,
+  `nemotron-3.5-lightning-free`, `nemotron-3.5-super-vl-free`.
+- **Pollinations** — `GET https://text.pollinations.ai/models`, keeps
+  `tier: "anonymous"` (refreshed hourly). Currently `openai-fast` plus its
+  aliases (`openai`, `gpt-oss`, `gpt-oss-20b`, `ovh-reasoning`).
+
+`pollinations` and `openai-fast` work with no key at all. OpenCode's free lane
+is rate-limited per IP (`FreeUsageLimitError`); a 429 there is the upstream
+free quota, not a proxy bug.
+
 ## Run
 
 ```bash
@@ -90,5 +111,12 @@ npm start
 ## Notes
 
 - **Grok**: Cloudflare may block datacenter IPs; paste full Cookie including `cf_clearance`.
+  A `code:8 / Too many requests` reply with `Diagnostics: signed-in` is xAI-side
+  quota or IP throttling — `/rest/rate-limits` returns 501, so the real window is
+  not exposed. Use `GET /api/providers/grok/diag` to inspect the account.
+- **Poe**: cannot work from a datacenter host. Poe is behind Cloudflare and its
+  `cf_clearance` cookie is bound to the browser's IP, so Render always gets
+  `403 Just a moment...`. The proxy returns that explanation instead of raw HTML.
+  It only works when run locally with a cookie from the same machine.
 - **OpenCode Free**: may return 403 without browser TLS fingerprint.
 - **UC**: `__client` is HttpOnly — copy from DevTools Application → Cookies, not `document.cookie`.

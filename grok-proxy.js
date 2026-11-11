@@ -228,6 +228,25 @@ async function probeAccount(cookie) {
   };
 }
 
+// The signed-in catalogue endpoint (/rest/models) is the authoritative source
+// for model ids + modes. Only reachable with a real cookie, so it lives in diag.
+function summarizeCatalog(json) {
+  const arr = Array.isArray(json?.models)
+    ? json.models
+    : Array.isArray(json?.data)
+      ? json.data
+      : Array.isArray(json)
+        ? json
+        : [];
+  return arr.slice(0, 40).map((m) => ({
+    id: m.modelId || m.id || m.modelName,
+    name: m.name,
+    modelMode: m.modelMode,
+    modeName: m.modeName,
+    tags: m.tags,
+  }));
+}
+
 function diagnosticsLine(d) {
   if (!d) return '';
   const bits = [];
@@ -649,11 +668,26 @@ async function diag() {
     const c = cookies[i];
     const flags = cookieFlags(c);
     let probe = null;
+    let catalog = null;
     if (flags.sso) {
       try {
         probe = await probeAccount(c);
       } catch (e) {
         probe = { error: e.message || String(e) };
+      }
+      if (probe && probe.signedIn) {
+        try {
+          const [models, modes] = await Promise.all([
+            getJson('/rest/models', c),
+            getJson('/rest/modes', c),
+          ]);
+          catalog = {
+            modelsStatus: models.status,
+            modesStatus: modes.status,
+            models: summarizeCatalog(models.json),
+            modes: summarizeCatalog(modes.json),
+          };
+        } catch (_) {}
       }
     }
     details.push({
@@ -662,6 +696,7 @@ async function diag() {
       cookie: flags,
       coolingMs: coolingLeft(c),
       probe,
+      catalog,
     });
   }
 
