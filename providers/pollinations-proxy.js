@@ -9,7 +9,7 @@ const MODELS_URL = 'https://text.pollinations.ai/models';
 
 // Verified against https://text.pollinations.ai/models — entries with
 // tier === "anonymous" are free. Paid/keyed tiers are never exposed.
-const FREE_FALLBACK = ['openai-fast'];
+const FREE_FALLBACK = ['openai-fast']; // live free tier from text.pollinations.ai/models
 
 function buildModels(ids, aliases) {
   const list = ids.slice();
