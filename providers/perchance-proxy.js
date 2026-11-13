@@ -5,6 +5,7 @@
  * Upstream: https://image-generation.perchance.org/api
  * Channel:  ai-text-to-image-generator (https://perchance.org/ai-text-to-image-generator)
  *
+ * NOTE: userKey is often IP-bound — home keys may fail on Render; prefer local npm start.
  * Auth: optional PERCHANCE_USER_KEY (from browser). If missing, tries /verifyUser
  * (often blocked by Cloudflare on datacenter IPs — then paste key in Admin).
  */

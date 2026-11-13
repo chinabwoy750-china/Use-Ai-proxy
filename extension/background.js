@@ -1,9 +1,113 @@
 /* global EXT_PROVIDERS, extDetectProvider */
 importScripts('providers.js');
 
-async function fetchPerchanceUserKey() {
+async function injectPerchanceKeyHook(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: 'MAIN',
+      func: () => {
+        if (window.__pcKeyHooked) return;
+        window.__pcKeyHooked = true;
+        const save = (k) => {
+          if (!k || typeof k !== 'string') return;
+          const key = k.trim();
+          if (key.length < 16) return;
+          try {
+            sessionStorage.setItem('PERCHANCE_USER_KEY', key);
+            localStorage.setItem('PERCHANCE_USER_KEY', key);
+          } catch (e) {}
+          window.__pcUserKey = key;
+        };
+        const scan = (s) => {
+          if (!s || typeof s !== 'string') return;
+          let m = s.match(/userKey=([a-fA-F0-9]{32,128})/);
+          if (m) save(m[1]);
+          m = s.match(/"userKey"\s*:\s*"([^"]+)"/);
+          if (m) save(m[1]);
+        };
+        const ofetch = window.fetch;
+        window.fetch = async function () {
+          const res = await ofetch.apply(this, arguments);
+          try {
+            const url = String(arguments[0] && arguments[0].url ? arguments[0].url : arguments[0] || '');
+            scan(url);
+            if (/verifyUser|generate|checkVerification/i.test(url)) {
+              const clone = res.clone();
+              clone.text().then(scan).catch(() => {});
+            }
+          } catch (e) {}
+          return res;
+        };
+        const open = XMLHttpRequest.prototype.open;
+        const send = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function (method, url) {
+          this.__pcUrl = url;
+          return open.apply(this, arguments);
+        };
+        XMLHttpRequest.prototype.send = function () {
+          this.addEventListener('load', function () {
+            try {
+              scan(String(this.__pcUrl || ''));
+              scan(String(this.responseText || ''));
+            } catch (e) {}
+          });
+          return send.apply(this, arguments);
+        };
+        try {
+          performance.getEntriesByType('resource').forEach((e) => scan(e.name || ''));
+        } catch (e) {}
+      },
+    });
+  } catch (e) {
+    console.warn('perchance hook', e);
+  }
+}
+
+async function readPerchanceKeyFromTab(tabId) {
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: () => {
+        const keys = [];
+        try {
+          keys.push(sessionStorage.getItem('PERCHANCE_USER_KEY'));
+          keys.push(localStorage.getItem('PERCHANCE_USER_KEY'));
+          keys.push(window.__pcUserKey);
+        } catch (e) {}
+        try {
+          performance.getEntriesByType('resource').forEach((e) => {
+            const m = String(e.name || '').match(/userKey=([a-fA-F0-9]{32,128})/);
+            if (m) keys.push(m[1]);
+          });
+        } catch (e) {}
+        return keys.filter(Boolean)[0] || '';
+      },
+    });
+    for (const r of results || []) {
+      if (r && r.result) return String(r.result).trim();
+    }
+    return '';
+  } catch {
+    return '';
+  }
+}
+
+async function fetchPerchanceUserKey(tabId) {
+  if (tabId) {
+    await injectPerchanceKeyHook(tabId);
+    let key = await readPerchanceKeyFromTab(tabId);
+    if (key) return key;
+  }
+
+  const browserId = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
   const url =
-    'https://image-generation.perchance.org/api/verifyUser?thread=0&__cacheBust=' + Math.random();
+    'https://image-generation.perchance.org/api/verifyUser?browserId=' +
+    browserId +
+    '&thread=0&__cacheBust=' +
+    Math.random();
   const r = await fetch(url, {
     method: 'GET',
     headers: {
@@ -13,21 +117,34 @@ async function fetchPerchanceUserKey() {
     },
   });
   const text = await r.text();
-  if (!r.ok) {
-    if (/just a moment|cloudflare/i.test(text)) {
-      throw new Error('Cloudflare blocked verifyUser even on your PC — open the Perchance page, pass CF, generate once, then Capture again');
-    }
-    throw new Error('Perchance verifyUser ' + r.status);
+  if (/just a moment|cloudflare/i.test(text)) {
+    throw new Error(
+      'Cloudflare challenge — open Perchance, pass the check, click Generate, wait for image, THEN Capture'
+    );
   }
   try {
     const j = JSON.parse(text);
-    const key = j.userKey || j.user_key || j.key || '';
-    if (key) return key;
-  } catch (_) {}
+    if (j.userKey) return j.userKey;
+    if (j.status === 'failed_verification' || j.reason === 'token_required') {
+      throw new Error(
+        'Perchance needs a page Generate first (Turnstile). Click Generate, wait for the image, then Capture'
+      );
+    }
+  } catch (e) {
+    if (e.message && /Turnstile|Generate|Cloudflare/.test(e.message)) throw e;
+  }
   const m = text.match(/"userKey"\s*:\s*"([^"]+)"/);
   if (m) return m[1];
-  throw new Error('Perchance verifyUser returned no userKey');
+  if (tabId) {
+    const key = await readPerchanceKeyFromTab(tabId);
+    if (key) return key;
+  }
+  throw new Error(
+    'No userKey found. Open perchance.org/ai-text-to-image-generator → Generate → wait for image → Capture. Or copy userKey from Network tab (generate?userKey=...)'
+  );
 }
+
+
 
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -115,7 +232,8 @@ async function captureAndSend({ proxyUrl, password, providerId, accountName }) {
 
   // Perchance: fetch userKey from this machine (bypasses Render Cloudflare)
   if (provider.id === 'perchance') {
-    const userKey = await fetchPerchanceUserKey();
+    await injectPerchanceKeyHook(tab.id);
+    const userKey = await fetchPerchanceUserKey(tab.id);
     const values = { PERCHANCE_USER_KEY: userKey };
     const base = String(proxyUrl || '').replace(/\/+$/, '');
     if (!base) throw new Error('Set Proxy URL in the popup first');
