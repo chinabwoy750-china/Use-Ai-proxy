@@ -6,7 +6,7 @@ Captures **HttpOnly cookies** + tokens from **all web-session providers** and PO
 
 ## Covered (web session)
 
-DeepSeek, Kimi, Perplexity, Grok, UC, Hugging Face, Poe, Z.ai, Venice, NoTrack, t3, Arena, ZenMux, Blackbox, Doubao, Yuanbao, AI Studio, v0, Notion, Meta AI, MaxAI, Inner, Adapta, TinyCMS, PromptQL, HyperAgent, Conol, Twinmind, SYNTX, Pollinations
+DeepSeek, Kimi, Perchance T2I, Perplexity, Grok, UC, Hugging Face, Poe, Z.ai, Venice, NoTrack, t3, Arena, ZenMux, Blackbox, Doubao, Yuanbao, AI Studio, v0, Notion, Meta AI, MaxAI, Inner, Adapta, TinyCMS, PromptQL, HyperAgent, Conol, Twinmind, SYNTX, Pollinations
 
 ## Not via extension
 

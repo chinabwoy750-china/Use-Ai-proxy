@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Use-AI Proxy Capture",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Capture logged-in provider cookies/tokens (including HttpOnly) and send them to your myproxy-use admin.",
   "action": {
     "default_title": "Capture → myproxy-use",

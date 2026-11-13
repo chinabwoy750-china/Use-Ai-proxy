@@ -338,6 +338,22 @@ const EXT_PROVIDERS = [
       return { SYNTX_TOKEN: access || ctx.cookieHeader };
     },
   },
+
+  {
+    id: 'perchance',
+    name: 'Perchance T2I',
+    match: [/perchance\.org/],
+    cookieDomains: ['.perchance.org', 'perchance.org', 'image-generation.perchance.org'],
+    localKeys: [],
+    build(ctx) {
+      // userKey is fetched by background (residential IP bypasses CF)
+      const key = String(ctx.local.userKey || ctx.local.perchanceUserKey || ctx.bearer || '').trim();
+      if (!key) {
+        throw new Error('No Perchance userKey — stay on perchance.org/ai-text-to-image-generator and Capture again');
+      }
+      return { PERCHANCE_USER_KEY: key };
+    },
+  },
   {
     id: 'pollinations',
     name: 'Pollinations',

@@ -1,6 +1,35 @@
 /* global EXT_PROVIDERS, extDetectProvider */
 importScripts('providers.js');
 
+async function fetchPerchanceUserKey() {
+  const url =
+    'https://image-generation.perchance.org/api/verifyUser?thread=0&__cacheBust=' + Math.random();
+  const r = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json, text/plain, */*',
+      Referer: 'https://perchance.org/ai-text-to-image-generator',
+      Origin: 'https://perchance.org',
+    },
+  });
+  const text = await r.text();
+  if (!r.ok) {
+    if (/just a moment|cloudflare/i.test(text)) {
+      throw new Error('Cloudflare blocked verifyUser even on your PC — open the Perchance page, pass CF, generate once, then Capture again');
+    }
+    throw new Error('Perchance verifyUser ' + r.status);
+  }
+  try {
+    const j = JSON.parse(text);
+    const key = j.userKey || j.user_key || j.key || '';
+    if (key) return key;
+  } catch (_) {}
+  const m = text.match(/"userKey"\s*:\s*"([^"]+)"/);
+  if (m) return m[1];
+  throw new Error('Perchance verifyUser returned no userKey');
+}
+
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === 'CAPTURE') {
     captureAndSend(msg)
@@ -83,6 +112,36 @@ async function captureAndSend({ proxyUrl, password, providerId, accountName }) {
   const provider =
     (providerId && EXT_PROVIDERS.find((p) => p.id === providerId)) || detected;
   if (!provider) throw new Error('Open a supported provider site tab first (DeepSeek, Kimi, …)');
+
+  // Perchance: fetch userKey from this machine (bypasses Render Cloudflare)
+  if (provider.id === 'perchance') {
+    const userKey = await fetchPerchanceUserKey();
+    const values = { PERCHANCE_USER_KEY: userKey };
+    const base = String(proxyUrl || '').replace(/\/+$/, '');
+    if (!base) throw new Error('Set Proxy URL in the popup first');
+    const r = await fetch(base + '/api/extension/import', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-password': password || '',
+      },
+      body: JSON.stringify({
+        provider: 'perchance',
+        name: accountName || 'Perchance extension',
+        values,
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false) {
+      throw new Error(j.error || j.message || 'Import failed HTTP ' + r.status);
+    }
+    return {
+      provider: 'perchance',
+      keys: Object.keys(values),
+      message: j.message || 'Imported Perchance userKey',
+      accounts: j.accounts,
+    };
+  }
 
   const cookies = await getCookiesForDomains(provider.cookieDomains || []);
   if (provider.requireAnyCookie && provider.requireAnyCookie.length) {
