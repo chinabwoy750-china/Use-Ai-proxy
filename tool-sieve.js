@@ -170,8 +170,9 @@ function stripInstructionLeak(text) {
   s = s.replace(/^\s*\[Available tools[^\]]*\]\s*/i, '');
   s = s.replace(/^\s*Available tools:\s*[^\n]*\n?/i, '');
 
-  // Strip leftover leading punctuation from partial removals
-  s = s.replace(/^[\s,;:.\-]+/, '');
+  // Only strip leftover tool punctuation (comma etc.) — NEVER strip spaces.
+  // Streaming tokens often begin with " word"; removing that space glues words together.
+  s = s.replace(/^[,;:]+/, '');
   return s;
 }
 
