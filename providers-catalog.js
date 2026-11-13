@@ -56,6 +56,7 @@ const PROVIDERS = [
   { id: 'muse', name: 'Meta AI / Muse', color: '#0668E1', text: 'Me', site: 'https://www.meta.ai', models: 'muse, meta-ai', scraper: 'cookie' },
   { id: 'tinycms', name: 'TinyCMS / FreeGPT', color: '#84CC16', text: 'TC', site: 'https://gov.freegpt.win', models: 'tinycms', scraper: 'cookie' },
   { id: 'maxai', name: 'MaxAI', color: '#F43F5E', text: 'Mx', site: 'https://www.maxai.co', models: 'maxai', scraper: 'cookie' },
+  { id: 'perchance', name: 'Perchance T2I', color: '#A855F7', text: 'Pc', site: 'https://perchance.org/ai-text-to-image-generator', models: 'perchance', scraper: 'none' },
   { id: 'pollinations', name: 'Pollinations', color: '#F59E0B', text: 'Po', site: 'https://pollinations.ai', models: 'pollinations', scraper: 'none' },
   { id: 'doubao', name: 'Doubao / Dola', color: '#3B82F6', text: 'Db', site: 'https://www.dola.com', models: 'doubao', scraper: 'cookie' },
   { id: 'zai', name: 'Z.ai Web', color: '#8B5CF6', text: 'Z', site: 'https://chat.z.ai', models: 'zai', scraper: 'zai' },

@@ -1244,5 +1244,30 @@
     "auth": "none",
     "fields": [],
     "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
+  },
+  {
+    "group": "media",
+    "auth": "session",
+    "kind": "media",
+    "id": "perchance",
+    "name": "Perchance T2I",
+    "color": "#A855F7",
+    "text": "Pc",
+    "site": "https://perchance.org/ai-text-to-image-generator",
+    "models": [
+      "perchance",
+      "perchance-square",
+      "perchance-portrait",
+      "perchance-landscape"
+    ],
+    "fields": [
+      {
+        "key": "PERCHANCE_USER_KEY",
+        "label": "userKey (from verifyUser)",
+        "area": false
+      }
+    ],
+    "blurb": "Free text-to-image. Optional userKey \u2014 if Cloudflare blocks server verifyUser, paste userKey from Network tab.",
+    "scraper": "none"
   }
 ]

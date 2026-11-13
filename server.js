@@ -47,6 +47,7 @@ const tinycmsProxy = load('./providers/tinycms-proxy');
 const maxaiProxy = load('./providers/maxai-proxy');
 
 const pollinationsProxy = load('./providers/pollinations-proxy');
+const perchanceProxy = load('./providers/perchance-proxy');
 const doubaoProxy = load('./providers/doubao-proxy');
 const zaiProxy = load('./providers/zai-proxy');
 const yuanbaoProxy = load('./providers/yuanbao-proxy');
@@ -95,6 +96,7 @@ function routeProxy(model) {
   if ((m.startsWith('maxai') || m.startsWith('max-ai')) && maxaiProxy) return maxaiProxy;
 
   if ((m.startsWith('pollinations')) && pollinationsProxy) return pollinationsProxy;
+  if ((m.startsWith('perchance')) && perchanceProxy) return perchanceProxy;
   if ((m.startsWith('doubao') || m.startsWith('dola')) && doubaoProxy) return doubaoProxy;
   if ((m.startsWith('zai') || m.startsWith('z-ai') || m === 'glm-z') && zaiProxy) return zaiProxy;
   if ((m.startsWith('yuanbao')) && yuanbaoProxy) return yuanbaoProxy;
@@ -218,6 +220,7 @@ function collectModels({ includeUnconfigured = false } = {}) {
   add(tinycmsProxy, 'tinycms');
   add(maxaiProxy, 'maxai');
   add(pollinationsProxy, 'pollinations');
+  add(perchanceProxy, 'perchance');
   add(doubaoProxy, 'doubao');
   add(zaiProxy, 'zai');
   add(yuanbaoProxy, 'yuanbao');
@@ -643,6 +646,15 @@ const server = http.createServer(async (req, res) => {
       } catch {
         return sendJson(res, 400, { error: 'bad json' });
       }
+      const im = String(opts.model || opts.provider || '').toLowerCase();
+      if ((im.startsWith('perchance') || im === 't2i') && perchanceProxy && perchanceProxy.handleImage) {
+        return perchanceProxy.handleImage(opts, res);
+      }
+      if ((im.startsWith('uc') || im === 'glm-image') && ucProxy && ucProxy.handleImage) {
+        return ucProxy.handleImage(opts, res);
+      }
+      // default: prefer perchance if present, else uc
+      if (perchanceProxy && perchanceProxy.handleImage) return perchanceProxy.handleImage(opts, res);
       if (ucProxy && ucProxy.handleImage) return ucProxy.handleImage(opts, res);
       return sendJson(res, 503, { error: 'image provider unavailable' });
     }
