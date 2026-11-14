@@ -117,12 +117,23 @@ async function redisSet(text) {
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!base || !token) return false;
   try {
-    await undiciFetch(`${base}/set/${encodeURIComponent(REDIS_KEY)}/${encodeURIComponent(text)}`, {
-      headers: { Authorization: 'Bearer ' + token },
-      signal: AbortSignal.timeout(15000),
+    // Body form — path-encoded SET breaks / truncates long proxy lists
+    const r = await undiciFetch(base.replace(/\/$/, ''), {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(['SET', REDIS_KEY, String(text || '')]),
+      signal: AbortSignal.timeout(30000),
     });
+    if (!r.ok) {
+      lastError = 'redis SET HTTP ' + r.status;
+      return false;
+    }
     return true;
-  } catch {
+  } catch (e) {
+    lastError = 'redis SET ' + (e.message || e);
     return false;
   }
 }
@@ -156,89 +167,113 @@ async function testHttpProxy(proxyUrl) {
   }
 }
 
+async function healthCheckOnly() {
+  // Test current rawList without reloading sources (preserves merges)
+  const httpOnes = shuffle(rawList.filter((p) => p.startsWith('http')));
+  const candidates = httpOnes.slice(0, MAX * 4);
+  if (!candidates.length) {
+    live = [];
+    if (rawList.length) {
+      lastError = `Loaded ${rawList.length} proxies but 0 HTTP — use http://host:port`;
+    }
+    lastRefresh = Date.now();
+    return detailedStats();
+  }
+  const next = [];
+  let i = 0;
+  const concurrency = 15;
+  async function worker() {
+    while (i < candidates.length && next.length < MAX) {
+      const idx = i++;
+      const p = candidates[idx];
+      const r = await testHttpProxy(p);
+      if (r.ok) {
+        next.push({
+          url: p,
+          scheme: 'http',
+          fails: 0,
+          lastOk: Date.now(),
+          lastFail: 0,
+          latency: r.latency,
+        });
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  live = next.sort((a, b) => a.latency - b.latency);
+  if (!live.length) {
+    lastError = `Tested ${Math.min(candidates.length, MAX * 4)} HTTP proxies — all failed.`;
+  } else {
+    lastError = '';
+  }
+  lastRefresh = Date.now();
+  console.log(`[proxy-pool] raw=${rawList.length} tested≈${Math.min(candidates.length, MAX * 4)} live=${live.length}`);
+  return detailedStats();
+}
+
 async function refresh(force) {
-  if (testing) return stats();
-  if (!force && Date.now() - lastRefresh < 45_000) return stats();
+  if (testing) return detailedStats();
+  if (!force && Date.now() - lastRefresh < 45_000) return detailedStats();
   testing = true;
   lastError = '';
   try {
-    const merged = [
+    // MERGE sources into existing in-memory list — never replace with empty redis/file
+    const fromSources = [
       ...loadEnvList(),
       ...loadLocalFile(),
       ...(await loadRemote()),
       ...(await redisGet()),
     ];
-    rawList = [...new Set(merged)];
+    const before = rawList.length;
+    rawList = [...new Set([...rawList, ...fromSources])];
     if (!rawList.length) {
       live = [];
       lastError =
-        'No proxies loaded. Set PROXY_POOL_URL, or POST text list to /api/proxy-pool/import, or add PROXY_POOL env. proxies.txt is not deployed (gitignored).';
+        'No proxies loaded. Import via Admin → Proxies, or set PROXY_POOL_URL.';
       lastRefresh = Date.now();
-      return stats();
+      return detailedStats();
     }
-
-    // HTTP only for undici path (socks need extra agent; skip for reliability)
-    const httpOnes = shuffle(rawList.filter((p) => p.startsWith('http')));
-    const candidates = httpOnes.slice(0, MAX * 4);
-    if (!candidates.length) {
-      live = [];
-      lastError =
-        `Loaded ${rawList.length} proxies but 0 HTTP — SOCKS-only lists cannot be used for fetch yet. Add http://host:port lines.`;
-      lastRefresh = Date.now();
-      return stats();
+    if (rawList.length > before) {
+      await persistRaw();
     }
-
-    const next = [];
-    let i = 0;
-    const concurrency = 15;
-    async function worker() {
-      while (i < candidates.length && next.length < MAX) {
-        const idx = i++;
-        const p = candidates[idx];
-        const r = await testHttpProxy(p);
-        if (r.ok) {
-          next.push({
-            url: p,
-            scheme: 'http',
-            fails: 0,
-            lastOk: Date.now(),
-            lastFail: 0,
-            latency: r.latency,
-          });
-        }
-      }
-    }
-    await Promise.all(Array.from({ length: concurrency }, () => worker()));
-    live = next.sort((a, b) => a.latency - b.latency);
-    if (!live.length) {
-      lastError = `Tested ${Math.min(candidates.length, MAX * 4)} HTTP proxies — all failed (dead free list or Render blocked). Try residential HTTP proxies.`;
-    }
-    lastRefresh = Date.now();
-    console.log(`[proxy-pool] raw=${rawList.length} tested≈${Math.min(candidates.length, MAX * 4)} live=${live.length}`);
+    return await healthCheckOnly();
   } finally {
     testing = false;
   }
-  return stats();
 }
 
 async function persistRaw() {
   const body = rawList.join('\n');
-  await redisSet(body);
+  const redisOk = await redisSet(body);
   try {
     fs.writeFileSync(path.join(process.cwd(), 'proxies.txt'), body);
   } catch (_) {}
-  return body;
+  if (!redisOk && process.env.UPSTASH_REDIS_REST_URL) {
+    console.warn('[proxy-pool] Redis persist failed — list kept in memory until restart');
+  }
+  return redisOk;
 }
 
 async function importList(text, opts = {}) {
   const list = loadFromText(text);
   if (!list.length) throw new Error('No valid proxy lines (use http://host:port or host:port per line/CSV)');
+  const before = rawList.length;
   if (opts.replace) rawList = [...new Set(list)];
   else rawList = [...new Set([...rawList, ...list])];
-  await persistRaw();
+  const ok = await persistRaw();
   lastImport = Date.now();
-  await refresh(true);
-  return detailedStats();
+  // Health-check current list only — do NOT reload sources (that wiped merges before)
+  testing = true;
+  try {
+    await healthCheckOnly();
+  } finally {
+    testing = false;
+  }
+  const st = detailedStats();
+  st.mergedFrom = before;
+  st.imported = list.length;
+  st.persisted = ok !== false;
+  return st;
 }
 
 async function removeProxy(url) {
@@ -383,6 +418,7 @@ setInterval(() => {
 
 module.exports = {
   refresh,
+  healthCheckOnly,
   importList,
   removeProxy,
   clearPool,
