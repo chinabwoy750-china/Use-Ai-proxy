@@ -247,9 +247,10 @@ function report(proxyUrl, ok) {
  * opts: standard fetch RequestInit + { preferProxy: true, retries: 3 }
  */
 async function fetchWithPool(url, opts = {}) {
-  const retries = opts.retries != null ? opts.retries : 3;
+  const retries = opts.retries != null ? opts.retries : 8;
   const prefer = opts.preferProxy !== false;
-  const { retries: _r, preferProxy: _p, ...init } = opts;
+  const rotateOn = opts.rotateOnStatuses || [403, 429, 503];
+  const { retries: _r, preferProxy: _p, rotateOnStatuses: _ros, ...init } = opts;
 
   if (!prefer || !enabled()) {
     return undiciFetch(url, init);
@@ -257,13 +258,13 @@ async function fetchWithPool(url, opts = {}) {
 
   await refresh(false);
   let lastErr;
+  let lastRes = null;
   for (let attempt = 0; attempt < retries; attempt++) {
     const p = pick();
     if (!p) break;
     try {
       const d = makeDispatcher(p.url);
       if (d.type !== 'http') {
-        // socks: try and skip if undici can't — mark fail
         report(p.url, false);
         continue;
       }
@@ -271,6 +272,12 @@ async function fetchWithPool(url, opts = {}) {
         ...init,
         dispatcher: d.dispatcher,
       });
+      // rate-limit / block → try next proxy
+      if (rotateOn.includes(r.status)) {
+        report(p.url, false);
+        lastRes = r;
+        continue;
+      }
       report(p.url, r.status < 500);
       return r;
     } catch (e) {
@@ -278,7 +285,7 @@ async function fetchWithPool(url, opts = {}) {
       lastErr = e;
     }
   }
-  // direct fallback
+  if (lastRes) return lastRes;
   try {
     return await undiciFetch(url, init);
   } catch (e) {

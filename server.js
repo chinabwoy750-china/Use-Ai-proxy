@@ -650,6 +650,62 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    
+    // Proxy Pollinations bytes through our pool (avoids client IP rate limit)
+    if (pathname === '/v1/images/pollinations' && req.method === 'GET') {
+      if (!webMedia || !webMedia.handlePollinationsImage) {
+        return sendJson(res, 503, { error: 'image module missing' });
+      }
+      const prompt = url.searchParams.get('prompt') || '';
+      const size = url.searchParams.get('size') || '1024x1024';
+      const model = url.searchParams.get('model') || 'flux';
+      // reuse handler with b64 then decode — simpler inline
+      const fakeRes = {
+        _code: 200,
+        _body: null,
+        writeHead(c) { this._code = c; },
+        end(b) { this._body = b; },
+      };
+      // call internal fetch path via JSON then strip
+      const opts = { prompt, size, model, response_format: 'b64_json' };
+      await new Promise((resolve) => {
+        const wrap = {
+          writeHead(code, headers) {
+            res.writeHead(code, headers);
+          },
+          end(body) {
+            try {
+              const j = JSON.parse(body);
+              if (j.error) {
+                res.writeHead(429, { 'Content-Type': 'application/json' });
+                res.end(body);
+                return resolve();
+              }
+              const b64 = j.data && j.data[0] && j.data[0].b64_json;
+              if (!b64) {
+                res.writeHead(502, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'no image' }));
+                return resolve();
+              }
+              const buf = Buffer.from(b64, 'base64');
+              res.writeHead(200, {
+                'Content-Type': 'image/jpeg',
+                'Cache-Control': 'no-store',
+                'Access-Control-Allow-Origin': '*',
+              });
+              res.end(buf);
+            } catch (e) {
+              res.writeHead(500);
+              res.end(String(e.message || e));
+            }
+            resolve();
+          },
+        };
+        webMedia.handlePollinationsImage(opts, wrap);
+      });
+      return;
+    }
+
     if (pathname === '/v1/images/generations' && req.method === 'POST') {
       const raw = await readBody(req);
       let opts;

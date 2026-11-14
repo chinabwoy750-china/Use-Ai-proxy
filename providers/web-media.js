@@ -387,32 +387,83 @@ async function handleFetch(opts, res) {
 
 /* ---------- images (free pollinations) ---------- */
 
+
 async function handlePollinationsImage(opts, res) {
   const prompt = String(opts.prompt || '').trim();
   if (!prompt) return sendJson(res, 400, { error: { message: 'prompt required' } });
   const size = String(opts.size || '1024x1024');
   const [w, h] = size.split('x').map((n) => parseInt(n, 10) || 1024);
   const seed = opts.seed != null ? Number(opts.seed) : Math.floor(Math.random() * 1e9);
-  const model = /flux/i.test(String(opts.model || '')) ? 'flux' : 'flux';
+  const model = /turbo/i.test(String(opts.model || '')) ? 'turbo' : 'flux';
   const imgUrl =
     `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}` +
     `?width=${w}&height=${h}&seed=${seed}&model=${model}&nologo=true&enhance=true`;
 
-  const fmt = String(opts.response_format || 'url').toLowerCase();
-  if (fmt === 'url') {
-    return sendJson(res, 200, {
-      created: Math.floor(Date.now() / 1000),
-      data: [{ url: imgUrl, revised_prompt: prompt }],
-    });
+  const fmt = String(opts.response_format || 'b64_json').toLowerCase();
+  // IMPORTANT: returning a direct pollinations URL hits the CLIENT/edge IP rate limit.
+  // We always fetch server-side through the proxy pool and either return b64 or a
+  // same-origin proxy URL that also fetches via the pool.
+
+  const doFetch = fetchWithPool || fetch;
+  let lastErr = '';
+  for (let i = 0; i < 6; i++) {
+    try {
+      const r = await doFetch(imgUrl, {
+        preferProxy: true,
+        retries: 10,
+        rotateOnStatuses: [403, 429, 503],
+        headers: {
+          Accept: 'image/*,*/*',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          Referer: 'https://pollinations.ai/',
+        },
+        signal: AbortSignal.timeout(90000),
+      });
+      const ctype = (r.headers && r.headers.get && r.headers.get('content-type')) || '';
+      const buf = Buffer.from(await r.arrayBuffer());
+      // Pollinations returns a yellow "Free limit reached" JPEG/PNG on rate limit
+      const head = buf.slice(0, 200).toString('utf8');
+      if (
+        r.status === 429 ||
+        /free limit|rate limit|too many/i.test(head) ||
+        (ctype.includes('json') && /limit/i.test(head))
+      ) {
+        lastErr = 'rate limited on this IP';
+        continue;
+      }
+      if (!r.ok || buf.length < 500) {
+        lastErr = 'bad response ' + r.status + ' len=' + buf.length;
+        continue;
+      }
+      // optional: detect tiny "limit" placeholder images (< 15kb yellow card often)
+      if (buf.length < 12000 && /limit|pollinations/i.test(buf.toString('latin1'))) {
+        lastErr = 'limit placeholder image';
+        continue;
+      }
+      if (fmt === 'url') {
+        // data URL so client never hits pollinations IP quota
+        const b64 = buf.toString('base64');
+        const mime = ctype.includes('png') ? 'image/png' : ctype.includes('webp') ? 'image/webp' : 'image/jpeg';
+        return sendJson(res, 200, {
+          created: Math.floor(Date.now() / 1000),
+          data: [{ url: `data:${mime};base64,${b64}`, revised_prompt: prompt }],
+        });
+      }
+      return sendJson(res, 200, {
+        created: Math.floor(Date.now() / 1000),
+        data: [{ b64_json: buf.toString('base64'), revised_prompt: prompt }],
+      });
+    } catch (e) {
+      lastErr = e.message || String(e);
+    }
   }
-  const r = await fetch(imgUrl, { signal: AbortSignal.timeout(90000) });
-  if (!r.ok) {
-    return sendJson(res, 502, { error: { message: 'Pollinations image ' + r.status } });
-  }
-  const buf = Buffer.from(await r.arrayBuffer());
-  return sendJson(res, 200, {
-    created: Math.floor(Date.now() / 1000),
-    data: [{ b64_json: buf.toString('base64'), revised_prompt: prompt }],
+  return sendJson(res, 429, {
+    error: {
+      message:
+        'Pollinations rate-limited on all tried proxy IPs. Wait ~45s or add more working HTTP proxies to the pool. Last: ' +
+        lastErr,
+      type: 'rate_limit',
+    },
   });
 }
 
