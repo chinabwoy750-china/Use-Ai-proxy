@@ -1315,5 +1315,156 @@
     ],
     "blurb": "Free text-to-image. Optional userKey — if Cloudflare blocks server verifyUser, paste userKey from Network tab.",
     "scraper": "none"
+  },
+  {
+    "group": "tools",
+    "auth": "apikey",
+    "kind": "tools",
+    "id": "tavily",
+    "name": "Tavily Search",
+    "color": "#0EA5E9",
+    "text": "Tv",
+    "site": "https://tavily.com",
+    "models": [
+      "tavily/search",
+      "tavily/extract"
+    ],
+    "fields": [
+      {
+        "key": "TAVILY_API_KEY",
+        "label": "API key",
+        "area": false
+      }
+    ],
+    "blurb": "Web search + extract. POST /v1/search model=tavily/search",
+    "scraper": "none"
+  },
+  {
+    "group": "tools",
+    "auth": "apikey",
+    "kind": "tools",
+    "id": "brave-search",
+    "name": "Brave Search",
+    "color": "#FB542B",
+    "text": "Br",
+    "site": "https://brave.com/search/api/",
+    "models": [
+      "brave-search/search"
+    ],
+    "fields": [
+      {
+        "key": "BRAVE_API_KEY",
+        "label": "API key",
+        "area": false
+      }
+    ],
+    "blurb": "Brave Search API for /v1/search",
+    "scraper": "none"
+  },
+  {
+    "group": "tools",
+    "auth": "apikey",
+    "kind": "tools",
+    "id": "serper",
+    "name": "Serper",
+    "color": "#6366F1",
+    "text": "Sp",
+    "site": "https://serper.dev",
+    "models": [
+      "serper/search"
+    ],
+    "fields": [
+      {
+        "key": "SERPER_API_KEY",
+        "label": "API key",
+        "area": false
+      }
+    ],
+    "blurb": "Google results via Serper for /v1/search",
+    "scraper": "none"
+  },
+  {
+    "group": "tools",
+    "auth": "apikey",
+    "kind": "tools",
+    "id": "exa",
+    "name": "Exa",
+    "color": "#A855F7",
+    "text": "Ex",
+    "site": "https://exa.ai",
+    "models": [
+      "exa/search",
+      "exa/contents"
+    ],
+    "fields": [
+      {
+        "key": "EXA_API_KEY",
+        "label": "API key",
+        "area": false
+      }
+    ],
+    "blurb": "Neural search + contents for /v1/search and /v1/web/fetch",
+    "scraper": "none"
+  },
+  {
+    "group": "tools",
+    "auth": "optional",
+    "kind": "tools",
+    "id": "jina",
+    "name": "Jina Reader",
+    "color": "#F59E0B",
+    "text": "Jn",
+    "site": "https://jina.ai/reader/",
+    "models": [
+      "jina/reader"
+    ],
+    "fields": [
+      {
+        "key": "JINA_API_KEY",
+        "label": "API key (optional)",
+        "area": false
+      }
+    ],
+    "blurb": "URL → markdown via r.jina.ai. Free tier works without key. POST /v1/web/fetch",
+    "scraper": "none"
+  },
+  {
+    "group": "tools",
+    "auth": "apikey",
+    "kind": "tools",
+    "id": "firecrawl",
+    "name": "Firecrawl",
+    "color": "#EF4444",
+    "text": "Fc",
+    "site": "https://firecrawl.dev",
+    "models": [
+      "firecrawl/scrape"
+    ],
+    "fields": [
+      {
+        "key": "FIRECRAWL_API_KEY",
+        "label": "API key",
+        "area": false
+      }
+    ],
+    "blurb": "JS-rendered page scrape for /v1/web/fetch",
+    "scraper": "none"
+  },
+  {
+    "group": "media",
+    "auth": "none",
+    "kind": "media",
+    "id": "pollinations-image",
+    "name": "Pollinations Image",
+    "color": "#F59E0B",
+    "text": "PI",
+    "site": "https://pollinations.ai",
+    "models": [
+      "pollinations/image",
+      "flux/schnell"
+    ],
+    "fields": [],
+    "blurb": "Free text-to-image. POST /v1/images/generations model=pollinations/image",
+    "scraper": "none"
   }
 ]

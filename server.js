@@ -48,6 +48,7 @@ const maxaiProxy = load('./providers/maxai-proxy');
 
 const pollinationsProxy = load('./providers/pollinations-proxy');
 const perchanceProxy = load('./providers/perchance-proxy');
+const webMedia = load('./providers/web-media');
 const doubaoProxy = load('./providers/doubao-proxy');
 const zaiProxy = load('./providers/zai-proxy');
 const yuanbaoProxy = load('./providers/yuanbao-proxy');
@@ -647,16 +648,69 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { error: 'bad json' });
       }
       const im = String(opts.model || opts.provider || '').toLowerCase();
+      if (im.includes('pollinations') || im.includes('flux') || im === 'pollinations/image' || im === '') {
+        if (webMedia && webMedia.handlePollinationsImage && (im.includes('pollinations') || im.includes('flux') || !im)) {
+          // only default to pollinations when model empty or pollinations/flux
+          if (im.includes('pollinations') || im.includes('flux')) {
+            return webMedia.handlePollinationsImage(opts, res);
+          }
+        }
+      }
       if ((im.startsWith('perchance') || im === 't2i') && perchanceProxy && perchanceProxy.handleImage) {
         return perchanceProxy.handleImage(opts, res);
       }
       if ((im.startsWith('uc') || im === 'glm-image') && ucProxy && ucProxy.handleImage) {
         return ucProxy.handleImage(opts, res);
       }
-      // default: prefer perchance if present, else uc
+      if (webMedia && webMedia.handlePollinationsImage && (im.includes('pollinations') || im.includes('flux') || im === 'image')) {
+        return webMedia.handlePollinationsImage(opts, res);
+      }
+      // free default: pollinations image
+      if (webMedia && webMedia.handlePollinationsImage && !im) {
+        return webMedia.handlePollinationsImage(opts, res);
+      }
+      if (webMedia && webMedia.handlePollinationsImage) return webMedia.handlePollinationsImage(opts, res);
       if (perchanceProxy && perchanceProxy.handleImage) return perchanceProxy.handleImage(opts, res);
       if (ucProxy && ucProxy.handleImage) return ucProxy.handleImage(opts, res);
       return sendJson(res, 503, { error: 'image provider unavailable' });
+    }
+
+    // 9router / OmniRoute compatible web search
+    if ((pathname === '/v1/search' || pathname === '/v1/web/search') && req.method === 'POST') {
+      const raw = await readBody(req);
+      let opts;
+      try { opts = JSON.parse(raw); } catch { return sendJson(res, 400, { error: 'bad json' }); }
+      if (!webMedia) return sendJson(res, 503, { error: 'web media module missing' });
+      return webMedia.handleSearch(opts, res);
+    }
+
+    // web fetch
+    if ((pathname === '/v1/web/fetch' || pathname === '/v1/fetch') && req.method === 'POST') {
+      const raw = await readBody(req);
+      let opts;
+      try { opts = JSON.parse(raw); } catch { return sendJson(res, 400, { error: 'bad json' }); }
+      if (!webMedia) return sendJson(res, 503, { error: 'web media module missing' });
+      return webMedia.handleFetch(opts, res);
+    }
+
+    // video generation
+    if ((pathname === '/v1/videos/generations' || pathname === '/v1/video/generations') && req.method === 'POST') {
+      const raw = await readBody(req);
+      let opts;
+      try { opts = JSON.parse(raw); } catch { return sendJson(res, 400, { error: 'bad json' }); }
+      if (!webMedia) return sendJson(res, 503, { error: 'web media module missing' });
+      return webMedia.handleVideo(opts, res);
+    }
+
+    // model catalogs for agents (9router style)
+    if (pathname === '/v1/models/web' && req.method === 'GET') {
+      return sendJson(res, 200, webMedia ? webMedia.listModels('web') : { object: 'list', data: [] });
+    }
+    if (pathname === '/v1/models/image' && req.method === 'GET') {
+      return sendJson(res, 200, webMedia ? webMedia.listModels('image') : { object: 'list', data: [] });
+    }
+    if (pathname === '/v1/models/video' && req.method === 'GET') {
+      return sendJson(res, 200, webMedia ? webMedia.listModels('video') : { object: 'list', data: [] });
     }
 
     if (pathname === '/v1/chat/completions' && req.method === 'POST') {
