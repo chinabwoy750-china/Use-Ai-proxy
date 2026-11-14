@@ -50,6 +50,7 @@ const pollinationsProxy = load('./providers/pollinations-proxy');
 const perchanceProxy = load('./providers/perchance-proxy');
 const webMedia = load('./providers/web-media');
 const proxyPool = load('./proxy-pool');
+const audioMod = load('./providers/audio');
 const doubaoProxy = load('./providers/doubao-proxy');
 const zaiProxy = load('./providers/zai-proxy');
 const yuanbaoProxy = load('./providers/yuanbao-proxy');
@@ -632,6 +633,21 @@ const server = http.createServer(async (req, res) => {
       if (proxyPool && proxyPool.refresh) await proxyPool.refresh(true);
       return sendJson(res, 200, proxyPool ? proxyPool.stats() : {});
     }
+    if (pathname === '/api/proxy-pool/import' && req.method === 'POST') {
+      if (!proxyPool || !proxyPool.importList) return sendJson(res, 503, { error: 'proxy pool missing' });
+      const raw = await readBody(req);
+      let text = raw;
+      try {
+        const j = JSON.parse(raw);
+        text = j.text || j.proxies || j.list || raw;
+      } catch (_) {}
+      try {
+        const st = await proxyPool.importList(text);
+        return sendJson(res, 200, st);
+      } catch (e) {
+        return sendJson(res, 400, { error: e.message || String(e) });
+      }
+    }
 
     if (pathname === '/health' || pathname === '/') {
       return sendJson(res, 200, {
@@ -761,6 +777,22 @@ const server = http.createServer(async (req, res) => {
     }
 
     // video generation
+    
+    if (pathname === '/v1/audio/speech' && req.method === 'POST') {
+      const raw = await readBody(req);
+      let opts;
+      try { opts = JSON.parse(raw); } catch { return sendJson(res, 400, { error: 'bad json' }); }
+      if (!audioMod) return sendJson(res, 503, { error: 'audio module missing' });
+      return audioMod.handleSpeech(opts, res);
+    }
+    if (pathname === '/v1/audio/transcriptions' && req.method === 'POST') {
+      if (!audioMod) return sendJson(res, 503, { error: 'audio module missing' });
+      return audioMod.handleTranscription({}, res);
+    }
+    if (pathname === '/v1/models/audio' && req.method === 'GET') {
+      return sendJson(res, 200, audioMod ? audioMod.listModels() : { object: 'list', data: [] });
+    }
+
     if ((pathname === '/v1/videos/generations' || pathname === '/v1/video/generations') && req.method === 'POST') {
       const raw = await readBody(req);
       let opts;

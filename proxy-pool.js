@@ -1,52 +1,39 @@
 'use strict';
 /**
- * Outbound proxy pool — rotate free/paid HTTP & SOCKS5 proxies for
- * Cloudflare-blocked upstreams (Perchance, etc.).
+ * Outbound proxy pool
  *
- * Sources (first that yields URLs wins, then merged):
- *   PROXY_POOL          comma/newline separated list
- *   PROXY_POOL_FILE     path (default ./proxies.txt)
- *   PROXY_POOL_URL      remote text list URL
- *   Upstash Redis key   useai-proxy:proxy-pool (optional)
- *
- * Env:
- *   PROXY_POOL_ENABLED=1     force on (default: on if any proxies loaded)
- *   PROXY_POOL_MAX=80        max live proxies kept in memory
- *   PROXY_POOL_TEST_URL=https://httpbin.org/ip
- *   PROXY_POOL_TEST_TIMEOUT_MS=8000
- *   PROXY_POOL_COOLDOWN_MS=120000
+ * Why live was 0: Render had raw=0 — no PROXY_POOL / PROXY_POOL_URL / proxies.txt on disk
+ * (proxies.txt is gitignored). Fix: set PROXY_POOL_URL, or POST /api/proxy-pool/import,
+ * or store list in Redis (useai-proxy:proxy-pool).
  */
 
 const fs = require('fs');
 const path = require('path');
 const { ProxyAgent, fetch: undiciFetch } = require('undici');
 
-let SocksProxyAgent = null;
-try {
-  SocksProxyAgent = require('socks-proxy-agent').SocksProxyAgent;
-} catch (_) {}
-
-const MAX = Math.min(Math.max(parseInt(process.env.PROXY_POOL_MAX || '80', 10) || 80, 5), 300);
+const MAX = Math.min(Math.max(parseInt(process.env.PROXY_POOL_MAX || '60', 10) || 60, 5), 200);
 const TEST_URL = process.env.PROXY_POOL_TEST_URL || 'https://api.ipify.org?format=json';
-const TEST_MS = Math.min(Math.max(parseInt(process.env.PROXY_POOL_TEST_TIMEOUT_MS || '8000', 10) || 8000, 2000), 20000);
-const COOLDOWN = Math.min(Math.max(parseInt(process.env.PROXY_POOL_COOLDOWN_MS || '120000', 10) || 120000, 10000), 600000);
+const TEST_MS = Math.min(Math.max(parseInt(process.env.PROXY_POOL_TEST_TIMEOUT_MS || '6000', 10) || 6000, 2000), 15000);
+const COOLDOWN = Math.min(Math.max(parseInt(process.env.PROXY_POOL_COOLDOWN_MS || '90000', 10) || 90000, 10000), 600000);
+const REDIS_KEY = process.env.PROXY_POOL_REDIS_KEY || 'useai-proxy:proxy-pool';
 
-/** @type {{ url: string, scheme: string, fails: number, lastOk: number, lastFail: number, latency: number }[]} */
 let live = [];
 let rawList = [];
 let rr = 0;
 let testing = false;
 let lastRefresh = 0;
+let lastError = '';
+let lastImport = 0;
 
 function parseLine(line) {
   line = String(line || '').trim();
   if (!line || line.startsWith('#')) return null;
-  // host:port:user:pass → http://user:pass@host:port
   if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(line)) {
     const parts = line.split(':');
     if (parts.length === 2) line = 'http://' + parts[0] + ':' + parts[1];
-    else if (parts.length === 4) line = `http://${parts[2]}:${parts[3]}@${parts[0]}:${parts[1]}`;
-    else if (parts.length === 3) line = `http://${parts[0]}:${parts[1]}`; // host:port:something
+    else if (parts.length === 4)
+      line = `http://${encodeURIComponent(parts[2])}:${encodeURIComponent(parts[3])}@${parts[0]}:${parts[1]}`;
+    else if (parts.length >= 3) line = 'http://' + parts[0] + ':' + parts[1];
   }
   try {
     const u = new URL(line);
@@ -77,22 +64,59 @@ function loadLocalFile() {
   return [];
 }
 
+function loadEnvList() {
+  const t = process.env.PROXY_POOL || '';
+  return t ? loadFromText(t.replace(/,/g, '\n')) : [];
+}
+
 async function loadRemote() {
   const url = process.env.PROXY_POOL_URL;
   if (!url) return [];
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
-    if (!r.ok) return [];
+    const r = await undiciFetch(url, { signal: AbortSignal.timeout(25000) });
+    if (!r.ok) {
+      lastError = 'PROXY_POOL_URL HTTP ' + r.status;
+      return [];
+    }
     return loadFromText(await r.text());
-  } catch {
+  } catch (e) {
+    lastError = 'PROXY_POOL_URL ' + (e.message || e);
     return [];
   }
 }
 
-function loadEnvList() {
-  const t = process.env.PROXY_POOL || '';
-  if (!t) return [];
-  return loadFromText(t.replace(/,/g, '\n'));
+async function redisGet() {
+  const base = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!base || !token) return [];
+  try {
+    const r = await undiciFetch(`${base}/get/${encodeURIComponent(REDIS_KEY)}`, {
+      headers: { Authorization: 'Bearer ' + token },
+      signal: AbortSignal.timeout(8000),
+    });
+    const j = await r.json();
+    const val = j.result;
+    if (!val) return [];
+    return loadFromText(typeof val === 'string' ? val : String(val));
+  } catch (e) {
+    lastError = 'redis get ' + (e.message || e);
+    return [];
+  }
+}
+
+async function redisSet(text) {
+  const base = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (!base || !token) return false;
+  try {
+    await undiciFetch(`${base}/set/${encodeURIComponent(REDIS_KEY)}/${encodeURIComponent(text)}`, {
+      headers: { Authorization: 'Bearer ' + token },
+      signal: AbortSignal.timeout(15000),
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function shuffle(arr) {
@@ -104,98 +128,70 @@ function shuffle(arr) {
   return a;
 }
 
-function makeDispatcher(proxyUrl) {
-  const u = new URL(proxyUrl);
-  if (u.protocol.startsWith('socks')) {
-    if (!SocksProxyAgent) throw new Error('socks-proxy-agent not installed');
-    // undici doesn't take socks agent directly — use agent in node http style via undici ProxyAgent only for http
-    // For socks we use SocksProxyAgent with node's fetch polyfill path — undici ProxyAgent is HTTP CONNECT only
-    return { type: 'socks', agent: new SocksProxyAgent(proxyUrl) };
-  }
-  return { type: 'http', dispatcher: new ProxyAgent(proxyUrl) };
+function makeHttpDispatcher(proxyUrl) {
+  return new ProxyAgent(proxyUrl);
 }
 
-async function testOne(proxyUrl) {
+async function testHttpProxy(proxyUrl) {
   const start = Date.now();
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TEST_MS);
   try {
-    const d = makeDispatcher(proxyUrl);
-    let ip = '';
-    if (d.type === 'http') {
-      const r = await undiciFetch(TEST_URL, {
-        dispatcher: d.dispatcher,
-        signal: ctrl.signal,
-        headers: { Accept: 'application/json' },
-      });
-      const t = await r.text();
-      if (!r.ok) throw new Error('status ' + r.status);
-      try {
-        ip = JSON.parse(t).ip || '';
-      } catch {
-        ip = t.slice(0, 40);
-      }
-    } else {
-      // socks via node https through agent — use undici not available; use global fetch with custom agent not in node18
-      // Fallback: mark untested socks as provisional OK only if CONNECT works via quick socket — skip strict test
-      const net = require('net');
-      const u = new URL(proxyUrl);
-      await new Promise((resolve, reject) => {
-        const s = net.connect({ host: u.hostname, port: Number(u.port) || 1080 }, () => {
-          s.end();
-          resolve();
-        });
-        s.on('error', reject);
-        s.setTimeout(TEST_MS, () => {
-          s.destroy();
-          reject(new Error('timeout'));
-        });
-      });
-      ip = 'socks-ok';
-    }
-    return { ok: true, latency: Date.now() - start, ip };
+    const r = await undiciFetch(TEST_URL, {
+      dispatcher: makeHttpDispatcher(proxyUrl),
+      signal: AbortSignal.timeout(TEST_MS),
+      headers: { Accept: 'application/json' },
+    });
+    const t = await r.text();
+    if (!r.ok) return { ok: false, latency: Date.now() - start, error: 'status ' + r.status };
+    return { ok: true, latency: Date.now() - start, ip: t.slice(0, 64) };
   } catch (e) {
-    return { ok: false, error: e.message || String(e), latency: Date.now() - start };
-  } finally {
-    clearTimeout(timer);
+    return { ok: false, latency: Date.now() - start, error: e.message || String(e) };
   }
 }
 
 async function refresh(force) {
-  if (testing) return;
-  if (!force && Date.now() - lastRefresh < 60_000) return;
+  if (testing) return stats();
+  if (!force && Date.now() - lastRefresh < 45_000) return stats();
   testing = true;
+  lastError = '';
   try {
     const merged = [
       ...loadEnvList(),
       ...loadLocalFile(),
       ...(await loadRemote()),
+      ...(await redisGet()),
     ];
-    const uniq = [...new Set(merged)];
-    rawList = uniq;
-    if (!uniq.length) {
+    rawList = [...new Set(merged)];
+    if (!rawList.length) {
       live = [];
+      lastError =
+        'No proxies loaded. Set PROXY_POOL_URL, or POST text list to /api/proxy-pool/import, or add PROXY_POOL env. proxies.txt is not deployed (gitignored).';
       lastRefresh = Date.now();
-      return;
+      return stats();
     }
-    // Prefer http proxies for undici reliability; sample socks
-    const httpOnes = shuffle(uniq.filter((p) => p.startsWith('http')));
-    const socksOnes = shuffle(uniq.filter((p) => p.startsWith('socks')));
-    const candidates = [...httpOnes.slice(0, MAX * 2), ...socksOnes.slice(0, Math.floor(MAX / 2))];
+
+    // HTTP only for undici path (socks need extra agent; skip for reliability)
+    const httpOnes = shuffle(rawList.filter((p) => p.startsWith('http')));
+    const candidates = httpOnes.slice(0, MAX * 4);
+    if (!candidates.length) {
+      live = [];
+      lastError =
+        `Loaded ${rawList.length} proxies but 0 HTTP — SOCKS-only lists cannot be used for fetch yet. Add http://host:port lines.`;
+      lastRefresh = Date.now();
+      return stats();
+    }
+
     const next = [];
-    // parallel test limited concurrency
-    const queue = candidates.slice(0, MAX * 3);
-    const concurrency = 12;
     let i = 0;
+    const concurrency = 15;
     async function worker() {
-      while (i < queue.length && next.length < MAX) {
+      while (i < candidates.length && next.length < MAX) {
         const idx = i++;
-        const p = queue[idx];
-        const r = await testOne(p);
+        const p = candidates[idx];
+        const r = await testHttpProxy(p);
         if (r.ok) {
           next.push({
             url: p,
-            scheme: p.split(':')[0],
+            scheme: 'http',
             fails: 0,
             lastOk: Date.now(),
             lastFail: 0,
@@ -206,24 +202,41 @@ async function refresh(force) {
     }
     await Promise.all(Array.from({ length: concurrency }, () => worker()));
     live = next.sort((a, b) => a.latency - b.latency);
+    if (!live.length) {
+      lastError = `Tested ${Math.min(candidates.length, MAX * 4)} HTTP proxies — all failed (dead free list or Render blocked). Try residential HTTP proxies.`;
+    }
     lastRefresh = Date.now();
-    console.log(
-      `[proxy-pool] loaded ${uniq.length} candidates, live=${live.length} (http=${live.filter((x) => x.scheme === 'http').length})`
-    );
+    console.log(`[proxy-pool] raw=${rawList.length} tested≈${Math.min(candidates.length, MAX * 4)} live=${live.length}`);
   } finally {
     testing = false;
   }
+  return stats();
+}
+
+async function importList(text) {
+  const list = loadFromText(text);
+  if (!list.length) throw new Error('No valid proxy lines');
+  // keep unique merge with existing
+  rawList = [...new Set([...rawList, ...list])];
+  const body = rawList.join('\n');
+  await redisSet(body);
+  // also write local if possible
+  try {
+    fs.writeFileSync(path.join(process.cwd(), 'proxies.txt'), body);
+  } catch (_) {}
+  lastImport = Date.now();
+  await refresh(true);
+  return stats();
 }
 
 function enabled() {
   if (process.env.PROXY_POOL_ENABLED === '0') return false;
-  if (process.env.PROXY_POOL_ENABLED === '1') return true;
-  return live.length > 0 || rawList.length > 0;
+  return live.length > 0;
 }
 
 function pick() {
   const now = Date.now();
-  const usable = live.filter((p) => p.fails < 3 && now - p.lastFail > COOLDOWN * Math.min(p.fails, 3));
+  const usable = live.filter((p) => p.fails < 4 && now - (p.lastFail || 0) > COOLDOWN * Math.min(p.fails, 3));
   const pool = usable.length ? usable : live;
   if (!pool.length) return null;
   rr = (rr + 1) % pool.length;
@@ -242,10 +255,6 @@ function report(proxyUrl, ok) {
   }
 }
 
-/**
- * fetch through next proxy. Falls back to direct if pool empty/disabled.
- * opts: standard fetch RequestInit + { preferProxy: true, retries: 3 }
- */
 async function fetchWithPool(url, opts = {}) {
   const retries = opts.retries != null ? opts.retries : 8;
   const prefer = opts.preferProxy !== false;
@@ -263,16 +272,10 @@ async function fetchWithPool(url, opts = {}) {
     const p = pick();
     if (!p) break;
     try {
-      const d = makeDispatcher(p.url);
-      if (d.type !== 'http') {
-        report(p.url, false);
-        continue;
-      }
       const r = await undiciFetch(url, {
         ...init,
-        dispatcher: d.dispatcher,
+        dispatcher: makeHttpDispatcher(p.url),
       });
-      // rate-limit / block → try next proxy
       if (rotateOn.includes(r.status)) {
         report(p.url, false);
         lastRes = r;
@@ -300,25 +303,32 @@ function stats() {
     live: live.length,
     testing,
     lastRefresh,
-    sample: live.slice(0, 5).map((p) => ({
+    lastImport,
+    lastError: lastError || null,
+    hint:
+      rawList.length === 0
+        ? 'Import proxies: POST /api/proxy-pool/import with text body, or set PROXY_POOL_URL'
+        : live.length === 0
+          ? 'Proxies loaded but none passed HTTP test — need working http://host:port'
+          : 'ok',
+    sample: live.slice(0, 8).map((p) => ({
       url: p.url.replace(/\/\/([^:]+:)[^@]+@/, '//$1***@'),
       latency: p.latency,
       fails: p.fails,
-      scheme: p.scheme,
     })),
   };
 }
 
-// bootstrap async
 setTimeout(() => {
   refresh(true).catch((e) => console.warn('[proxy-pool]', e.message));
-}, 1500);
+}, 2000);
 setInterval(() => {
   refresh(true).catch(() => {});
-}, 15 * 60 * 1000).unref?.();
+}, 12 * 60 * 1000).unref?.();
 
 module.exports = {
   refresh,
+  importList,
   pick,
   report,
   fetchWithPool,

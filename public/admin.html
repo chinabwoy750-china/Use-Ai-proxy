@@ -131,8 +131,11 @@ textarea{min-height:88px;resize:vertical}
 <div class="toast" id="toast"></div>
 <nav class="nav" id="nav" style="display:none">
   <div class="brand"><strong>Use-AI Proxy</strong><span>Modern OpenAI gateway</span></div>
-  <button data-nav="providers" class="on"><span class="nav-ico" data-ico="providers"></span>Providers</button>
-  <button data-nav="media"><span class="nav-ico" data-ico="media"></span>Media</button>
+  <button data-nav="providers" class="on"><span class="nav-ico" data-ico="providers"></span>Chat</button>
+  <button data-nav="image"><span class="nav-ico" data-ico="media"></span>Image</button>
+  <button data-nav="video"><span class="nav-ico" data-ico="media"></span>Video</button>
+  <button data-nav="search"><span class="nav-ico" data-ico="providers"></span>Search</button>
+  <button data-nav="audio"><span class="nav-ico" data-ico="media"></span>Audio</button>
   <button data-nav="custom"><span class="nav-ico" data-ico="custom"></span>Custom</button>
   <button data-nav="icons"><span class="nav-ico" data-ico="icons"></span>Icons</button>
 </nav>
@@ -252,18 +255,39 @@ function renderLogin(){
 function listSections(){
   const kindTab=view.tab;
   let list=PROVIDERS.filter(p=>{
-    if(kindTab==='media') return p.kind==='media';
-    if(kindTab==='providers') return p.kind!=='media';
+    if(kindTab==='media') return p.kind==='media'||p.kind==='image'||p.kind==='video';
+    if(kindTab==='image') return p.kind==='image';
+    if(kindTab==='video') return p.kind==='video';
+    if(kindTab==='search') return p.kind==='search'||p.kind==='tools';
+    if(kindTab==='audio') return p.kind==='audio';
+    if(kindTab==='providers'||kindTab==='chat') return !p.kind||p.kind==='chat'||!['image','video','search','audio','media','tools'].includes(p.kind);
     return false;
   }).filter(p=>!filter||p.name.toLowerCase().includes(filter)||p.id.includes(filter));
 
   const sections=[];
-  if(kindTab==='providers'){
-    sections.push({title:'Web proxies', items:list.filter(p=>groupOf(p)==='web')});
-    sections.push({title:'API key providers', items:list.filter(p=>groupOf(p)==='apikey'||groupOf(p)==='api-free')});
-    sections.push({title:'Free tier & tools', items:list.filter(p=>groupOf(p)==='free-other')});
-  } else {
+  if(kindTab==='providers' || kindTab==='chat'){
+    const web=list.filter(p=>groupOf(p)==='web' || p.auth==='cookie' || p.auth==='session');
+    const api=list.filter(p=>p.auth==='apikey' || groupOf(p)==='apikey' || groupOf(p)==='api-free');
+    const rest=list.filter(p=>!web.includes(p) && !api.includes(p));
+    sections.push({title:'Chat · Web session', items:web});
+    sections.push({title:'Chat · API keys', items:api});
+    sections.push({title:'Chat · Other', items:rest});
+  } else if(kindTab==='image'){
+    sections.push({title:'Image generation', items:list});
+  } else if(kindTab==='video'){
+    sections.push({title:'Video generation', items:list});
+  } else if(kindTab==='search'){
+    sections.push({title:'Web search', items:list.filter(p=>/search|searx|tavily|brave|serper|exa/i.test(p.id+p.name))});
+    sections.push({title:'Web fetch', items:list.filter(p=>/jina|firecrawl|fetch/i.test(p.id+p.name))});
+    sections.push({title:'Other search tools', items:list.filter(p=>!sections.some(s=>s.items.includes(p)))});
+  } else if(kindTab==='audio'){
+    sections.push({title:'Text-to-speech', items:list.filter(p=>/tts|eleven|openai-audio|edge/i.test(p.id))});
+    sections.push({title:'Speech-to-text', items:list.filter(p=>/deepgram|whisper|assembly|stt/i.test(p.id+p.name))});
+    sections.push({title:'Audio · Other', items:list.filter(p=>!sections.some(s=>s.items.includes(p)))});
+  } else if(kindTab==='media'){
     sections.push({title:'Media', items:list});
+  } else {
+    sections.push({title:'All', items:list});
   }
   return sections.filter(s=>s.items.length);
 }
@@ -283,7 +307,7 @@ function renderList(){
   const sections=listSections();
   const html=sections.map(s=>`<div class="section-label anim">${s.title} · ${s.items.length}</div><div class="provider-grid stagger">${s.items.map(cardItem).join('')}</div>`).join('');
   document.getElementById('root').innerHTML=`<div class="wrap">
-    <div class="topbar anim"><div><div style="font-weight:800;font-size:22px;letter-spacing:-.03em">${view.tab==='media'?'Media':'Providers'}</div>
+    <div class="topbar anim"><div><div style="font-weight:800;font-size:22px;letter-spacing:-.03em">${({providers:'Chat',chat:'Chat',media:'Media',image:'Image',video:'Video',search:'Web Search',audio:'Audio',icons:'Icons'})[view.tab]||'Providers'}</div>
       <div class="muted">Grouped like 9router · unified accounts</div></div>
       <button class="btn ghost" id="logout">Logout</button></div>
     <input class="search anim anim-d1" id="search" placeholder="Search providers…" value="${filter.replace(/"/g,'&quot;')}"/>

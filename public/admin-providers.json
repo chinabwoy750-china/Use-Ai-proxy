@@ -24,7 +24,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -56,7 +56,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -84,7 +84,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -112,7 +112,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -136,7 +136,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -162,7 +162,7 @@
         "label": "hf-chat cookie"
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -184,7 +184,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -207,7 +207,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -230,7 +230,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -253,7 +253,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -275,7 +275,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -297,7 +297,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -319,7 +319,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -341,7 +341,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -369,7 +369,7 @@
         "label": "Token"
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -391,7 +391,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -421,7 +421,7 @@
         "area": false
       }
     ],
-    "blurb": "Free Gemini API key from AI Studio. Models: gemini-2.0-flash, gemini-2.5-flash, gemini-2.5-pro, …",
+    "blurb": "Free Gemini API key from AI Studio. Models: gemini-2.0-flash, gemini-2.5-flash, gemini-2.5-pro, \u2026",
     "scraper": "none"
   },
   {
@@ -443,7 +443,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -465,7 +465,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -487,7 +487,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -509,7 +509,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -531,7 +531,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -553,7 +553,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -575,7 +575,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -597,7 +597,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -619,7 +619,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -641,7 +641,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -663,7 +663,7 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -685,13 +685,13 @@
         "area": true
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
-    "group": "web",
+    "group": "media",
     "auth": "session",
-    "kind": "media",
+    "kind": "video",
     "id": "veo",
     "name": "Veo Free",
     "color": "#EA4335",
@@ -708,7 +708,7 @@
         "label": "Enabled (1/0)"
       }
     ],
-    "blurb": "Web session provider — add one or more accounts with the fields below.",
+    "blurb": "Web session provider \u2014 add one or more accounts with the fields below.",
     "scraper": "cookie"
   },
   {
@@ -734,7 +734,7 @@
         "area": false
       }
     ],
-    "blurb": "Free anonymous text models via text.pollinations.ai — default openai-fast (GPT-OSS 20B).",
+    "blurb": "Free anonymous text models via text.pollinations.ai \u2014 default openai-fast (GPT-OSS 20B).",
     "scraper": "cookie"
   },
   {
@@ -770,7 +770,7 @@
       },
       {
         "key": "KIRO_PROFILE_ARN",
-        "label": "Profile ARN (optional — auto if blank)",
+        "label": "Profile ARN (optional \u2014 auto if blank)",
         "area": true
       },
       {
@@ -1142,8 +1142,8 @@
     "blurb": "Free-tier / API key provider. Add multiple keys as separate accounts for round-robin."
   },
   {
-    "group": "free",
-    "kind": "chat",
+    "group": "search",
+    "kind": "search",
     "id": "searxng",
     "name": "SearXNG",
     "color": "#3B82F6",
@@ -1294,7 +1294,7 @@
   {
     "group": "media",
     "auth": "session",
-    "kind": "media",
+    "kind": "image",
     "id": "perchance",
     "name": "Perchance T2I",
     "color": "#A855F7",
@@ -1313,13 +1313,13 @@
         "area": false
       }
     ],
-    "blurb": "Free text-to-image. Optional userKey — if Cloudflare blocks server verifyUser, paste userKey from Network tab.",
+    "blurb": "Free text-to-image. Optional userKey \u2014 if Cloudflare blocks server verifyUser, paste userKey from Network tab.",
     "scraper": "none"
   },
   {
-    "group": "tools",
+    "group": "search",
     "auth": "apikey",
-    "kind": "tools",
+    "kind": "search",
     "id": "tavily",
     "name": "Tavily Search",
     "color": "#0EA5E9",
@@ -1340,9 +1340,9 @@
     "scraper": "none"
   },
   {
-    "group": "tools",
+    "group": "search",
     "auth": "apikey",
-    "kind": "tools",
+    "kind": "search",
     "id": "brave-search",
     "name": "Brave Search",
     "color": "#FB542B",
@@ -1362,9 +1362,9 @@
     "scraper": "none"
   },
   {
-    "group": "tools",
+    "group": "search",
     "auth": "apikey",
-    "kind": "tools",
+    "kind": "search",
     "id": "serper",
     "name": "Serper",
     "color": "#6366F1",
@@ -1384,9 +1384,9 @@
     "scraper": "none"
   },
   {
-    "group": "tools",
+    "group": "search",
     "auth": "apikey",
-    "kind": "tools",
+    "kind": "search",
     "id": "exa",
     "name": "Exa",
     "color": "#A855F7",
@@ -1407,9 +1407,9 @@
     "scraper": "none"
   },
   {
-    "group": "tools",
+    "group": "search",
     "auth": "optional",
-    "kind": "tools",
+    "kind": "search",
     "id": "jina",
     "name": "Jina Reader",
     "color": "#F59E0B",
@@ -1425,13 +1425,13 @@
         "area": false
       }
     ],
-    "blurb": "URL → markdown via r.jina.ai. Free tier works without key. POST /v1/web/fetch",
+    "blurb": "URL \u2192 markdown via r.jina.ai. Free tier works without key. POST /v1/web/fetch",
     "scraper": "none"
   },
   {
-    "group": "tools",
+    "group": "search",
     "auth": "apikey",
-    "kind": "tools",
+    "kind": "search",
     "id": "firecrawl",
     "name": "Firecrawl",
     "color": "#EF4444",
@@ -1453,7 +1453,7 @@
   {
     "group": "media",
     "auth": "none",
-    "kind": "media",
+    "kind": "image",
     "id": "pollinations-image",
     "name": "Pollinations Image",
     "color": "#F59E0B",
@@ -1465,6 +1465,73 @@
     ],
     "fields": [],
     "blurb": "Free text-to-image. POST /v1/images/generations model=pollinations/image",
+    "scraper": "none"
+  },
+  {
+    "id": "openai-audio",
+    "name": "OpenAI Audio",
+    "kind": "audio",
+    "group": "audio",
+    "auth": "apikey",
+    "color": "#10A37F",
+    "text": "OA",
+    "site": "https://platform.openai.com",
+    "models": [
+      "openai/tts-1",
+      "openai/whisper-1"
+    ],
+    "fields": [
+      {
+        "key": "OPENAI_API_KEY",
+        "label": "API key",
+        "area": false
+      }
+    ],
+    "blurb": "TTS + Whisper STT",
+    "scraper": "none"
+  },
+  {
+    "id": "elevenlabs",
+    "name": "ElevenLabs",
+    "kind": "audio",
+    "group": "audio",
+    "auth": "apikey",
+    "color": "#000",
+    "text": "11",
+    "site": "https://elevenlabs.io",
+    "models": [
+      "elevenlabs/tts"
+    ],
+    "fields": [
+      {
+        "key": "ELEVENLABS_API_KEY",
+        "label": "API key",
+        "area": false
+      }
+    ],
+    "blurb": "ElevenLabs TTS",
+    "scraper": "none"
+  },
+  {
+    "id": "deepgram",
+    "name": "Deepgram",
+    "kind": "audio",
+    "group": "audio",
+    "auth": "apikey",
+    "color": "#13EF93",
+    "text": "DG",
+    "site": "https://deepgram.com",
+    "models": [
+      "deepgram/nova-2"
+    ],
+    "fields": [
+      {
+        "key": "DEEPGRAM_API_KEY",
+        "label": "API key",
+        "area": false
+      }
+    ],
+    "blurb": "Speech-to-text",
     "scraper": "none"
   }
 ]
