@@ -1,4 +1,7 @@
 'use strict';
+let fetchWithPool = null;
+try { fetchWithPool = require('./proxy-pool').fetchWithPool; } catch (_) {}
+const doFetch = (...a) => (fetchWithPool ? fetchWithPool(...a) : fetch(...a));
 /**
  * OpenCode Free → OpenAI SSE
  * Base: https://opencode.ai/inference/openai/v1
@@ -120,11 +123,14 @@ async function handle(opts, res) {
   if (opts.temperature != null) body.temperature = opts.temperature;
 
   try {
-    const r = await fetch(CHAT_URL, {
+    const r = await doFetch(CHAT_URL, {
+      preferProxy: true,
+      retries: 6,
+      rotateOnStatuses: [403, 429, 503],
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: 'Bearer public',
+        Authorization: 'Bearer ' + (process.env.OPENCODE_API_KEY || process.env.OPENCODE_TOKEN || 'public'),
         'User-Agent': OPENCODE_UA,
         'x-opencode-client': OPENCODE_CLIENT,
         'x-opencode-session': session,
@@ -139,6 +145,12 @@ async function handle(opts, res) {
 
     if (!r.ok) {
       const t = await r.text().catch(() => '');
+      if (r.status === 429 || /FreeUsageLimitError|free usage limit/i.test(t)) {
+        throw new Error(
+          'OpenCode free limit reached for this IP. Wait, switch model (big-pickle / beam-free), enable more proxies in Admin → Proxies, or set OPENCODE_API_KEY (OpenCode Go). Upstream: ' +
+            t.slice(0, 160)
+        );
+      }
       throw new Error(`OpenCode ${r.status}: ${t.slice(0, 280)}`);
     }
 
