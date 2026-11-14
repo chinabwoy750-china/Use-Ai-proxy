@@ -255,7 +255,28 @@ function topbarHTML(title, sub){
 }
 
 function icon(p){const src=iconsMap[p.id];if(src)return `<img src="${src}" alt="" loading="lazy" referrerpolicy="no-referrer" data-pid="${p.id}" onerror="window.__iconErr&&window.__iconErr(this)"/>`;return `<span>${p.text||p.id.slice(0,2).toUpperCase()}</span>`}
-window.__iconErr=async function(img){try{if(img.dataset.fallbackTried){img.style.display='none';return}img.dataset.fallbackTried='1';const j=await fetch('/api/icons/candidates/'+encodeURIComponent(img.dataset.pid)).then(r=>r.json()).catch(()=>null);const next=((j&&j.candidates)||[]).find(u=>u&&u!==img.src);if(next){img.dataset.fallbackTried='';img.src=next}else img.style.display='none'}catch{img.style.display='none'}};
+window.__iconErr=async function(img){try{
+  const pid=img.dataset.pid;
+  if(!img.dataset.cand){
+    const j=await fetch('/api/icons/candidates/'+encodeURIComponent(pid)).then(r=>r.json()).catch(()=>({candidates:[]}));
+    img.dataset.cand=JSON.stringify((j&&j.candidates)||[]);
+    img.dataset.ci='0';
+  }
+  const list=JSON.parse(img.dataset.cand||'[]');
+  let i=parseInt(img.dataset.ci||'0',10)+1;
+  while(i<list.length){
+    const u=list[i++];
+    if(u && u!==img.src){ img.dataset.ci=String(i-1); img.src=u; return; }
+  }
+  // final: hide image, show monogram text via parent
+  img.style.display='none';
+  const parent=img.parentElement;
+  if(parent && !parent.querySelector('.mono')){
+    const s=document.createElement('span'); s.className='mono';
+    s.textContent=(pid||'?').slice(0,2).toUpperCase();
+    parent.appendChild(s);
+  }
+}catch{img.style.display='none'}};
 
 function accountFields(p){
   if(p.fields && p.fields.length) return p.fields;

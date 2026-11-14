@@ -238,11 +238,92 @@ const PROVIDER_ICON_MAP = {
   midjourney: { lobe: 'midjourney', domain: 'midjourney.com' },
   stability: { lobe: 'stability', domain: 'stability.ai' },
   runway: { lobe: 'runway', domain: 'runwayml.com' },
-  luma: { lobe: 'luma', domain: 'lumalabs.ai' },
-  kling: { lobe: 'kling', domain: 'klingai.com' },
+  luma: { domain: 'lumalabs.ai' },
+  kling: { domain: 'klingai.com' },
   pika: { lobe: 'pika', domain: 'pika.art' },
   suno: { lobe: 'suno', domain: 'suno.com' },
   udio: { lobe: 'udio', domain: 'udio.com' },
+  'api-airforce': { domain: 'api.airforce' },
+  agnes: { domain: 'agnes-ai.com' },
+  bazaarlink: { domain: 'bazaarlink.com' },
+  byteplus: { domain: 'byteplus.com' },
+  'cloudflare-ai': { domain: 'dash.cloudflare.com' },
+  'kilo-gateway': { domain: 'kilo.ai' },
+  kimchi: { domain: 'kimchi.ai' },
+  'mimo-free': { domain: 'mimo.ai' },
+  nous: { domain: 'nousresearch.com' },
+  poolside: { domain: 'poolside.ai' },
+  vertex: { domain: 'cloud.google.com' },
+  'baidu-search': { lobe: 'baidu', simple: 'baidu', domain: 'baidu.com' },
+  'brave-search': { simple: 'brave', domain: 'brave.com' },
+  exa: { domain: 'exa.ai' },
+  'exa-fetch': { domain: 'exa.ai' },
+  firecrawl: { domain: 'firecrawl.dev' },
+  'google-pse': { lobe: 'google', simple: 'google', domain: 'google.com' },
+  'jina-ai': { domain: 'jina.ai' },
+  jina: { domain: 'jina.ai' },
+  'jina-reader': { domain: 'jina.ai' },
+  linkup: { domain: 'linkup.so' },
+  'ollama-search': { lobe: 'ollama', domain: 'ollama.com' },
+  'perplexity-search': { lobe: 'perplexity', simple: 'perplexity', domain: 'perplexity.ai' },
+  searxng: { domain: 'searxng.org' },
+  searchapi: { domain: 'searchapi.io' },
+  serper: { domain: 'serper.dev' },
+  tavily: { domain: 'tavily.com' },
+  'tavily-fetch': { domain: 'tavily.com' },
+  tinyfish: { domain: 'tinyfish.ai' },
+  xquik: { domain: 'x.com' },
+  youcom: { domain: 'you.com' },
+  'black-forest-labs': { domain: 'blackforestlabs.ai' },
+  'cloudflare-image': { lobe: 'cloudflare', simple: 'cloudflare', domain: 'cloudflare.com' },
+  comfyui: { domain: 'comfy.org' },
+  'fal-ai': { domain: 'fal.ai' },
+  'gemini-image': { lobe: 'gemini', domain: 'gemini.google.com' },
+  'huggingface-image': { lobe: 'huggingface', simple: 'huggingface', domain: 'huggingface.co' },
+  nanobanana: { domain: 'nanobanana.ai' },
+  'openai-image': { lobe: 'openai', simple: 'openai', domain: 'openai.com' },
+  perchance: { domain: 'perchance.org' },
+  'pollinations-image': { domain: 'pollinations.ai' },
+  recraft: { domain: 'recraft.ai' },
+  'runway-image': { domain: 'runwayml.com' },
+  sdwebui: { domain: 'github.com' },
+  'siliconflow-image': { domain: 'siliconflow.cn' },
+  'stability-ai': { lobe: 'stability', domain: 'stability.ai' },
+  'together-image': { lobe: 'together', domain: 'together.ai' },
+  topaz: { domain: 'topazlabs.com' },
+  'venice-image': { domain: 'venice.ai' },
+  'xai-image': { lobe: 'xai', domain: 'x.ai' },
+  'agnes-video': { domain: 'agnes-ai.com' },
+  hailuo: { domain: 'minimaxi.com' },
+  'pollinations-video': { domain: 'pollinations.ai' },
+  runwayml: { domain: 'runwayml.com' },
+  'veoaifree-web': { lobe: 'google', domain: 'deepmind.google' },
+  'vertex-video': { lobe: 'googlecloud', domain: 'cloud.google.com' },
+  'xai-video': { lobe: 'xai', domain: 'x.ai' },
+  'aws-polly': { lobe: 'amazonaws', simple: 'amazonaws', domain: 'aws.amazon.com' },
+  assemblyai: { domain: 'assemblyai.com' },
+  cartesia: { domain: 'cartesia.ai' },
+  coqui: { domain: 'github.com' },
+  deepgram: { domain: 'deepgram.com' },
+  'edge-tts': { simple: 'microsoft', domain: 'microsoft.com' },
+  elevenlabs: { domain: 'elevenlabs.io' },
+  'fish-audio': { domain: 'fish.audio' },
+  'gemini-tts': { lobe: 'gemini', domain: 'ai.google.dev' },
+  'google-tts': { lobe: 'google', simple: 'google', domain: 'google.com' },
+  'groq-stt': { lobe: 'groq', domain: 'groq.com' },
+  'huggingface-stt': { lobe: 'huggingface', simple: 'huggingface', domain: 'huggingface.co' },
+  inworld: { domain: 'inworld.ai' },
+  'minimax-tts': { domain: 'minimaxi.com' },
+  'ollama-tts': { lobe: 'ollama', domain: 'ollama.com' },
+  'openai-audio': { lobe: 'openai', simple: 'openai', domain: 'openai.com' },
+  playht: { domain: 'play.ht' },
+  'selfhosted-stt': { domain: 'github.com' },
+  'selfhosted-tts': { domain: 'github.com' },
+  tortoise: { domain: 'github.com' },
+  'xiaomi-mimo-tts': { simple: 'xiaomi', domain: 'xiaomi.com' },
+  'devin-cli': { domain: 'devin.ai' },
+  'gemini-cli': { lobe: 'gemini', domain: 'ai.google.dev' },
+  'local-device': { domain: 'localhost' },
 };
 
 function domainFromSite(site) {
@@ -265,26 +346,35 @@ function hasBrandSvg(meta, key) {
 function iconCandidates(id, opts = {}) {
   const key = String(id || '').toLowerCase().trim();
   const meta = PROVIDER_ICON_MAP[key] || {};
-  const lobe = meta.lobe || (meta.simple ? null : null);
-  // Only use auto lobe slug when explicitly mapped — avoids 404 spam for unknown brands
-  const lobeSlug = meta.lobe;
-  const simple = meta.simple;
+  // Prefer explicit map; otherwise try id / base id as Lobe + Simple slug
+  const base = key.replace(/-(web|image|video|tts|stt|search|fetch|audio|cli|api)$/g, '');
+  const lobeSlug = meta.lobe || null;
+  const guessedLobe = meta.lobe || meta.simple || null;
+  // Auto-try slug forms for unmapped providers (library first; 404 falls through onerror)
+  const autoSlugs = [];
+  if (!meta.lobe && !meta.simple) {
+    autoSlugs.push(key, base, key.replace(/-/g, ''), base.replace(/-/g, ''));
+  }
+  const simple = meta.simple || null;
   const domain = meta.domain || domainFromSite(opts.site) || '';
   const fallback = defaultIconDataUri(key, { text: opts.text });
 
   const urls = [];
-  if (lobeSlug) {
-    // PNG dark first — richer color on dark UI; SVG as fallback
-    urls.push(LOBE_PNG_DARK(lobeSlug));
-    urls.push(LOBE_SVG(lobeSlug));
-    urls.push(LOBE_SVG_JSDELIVR(lobeSlug));
-  }
+  const pushLobe = (slug) => {
+    if (!slug) return;
+    urls.push(LOBE_PNG_DARK(slug));
+    urls.push(LOBE_SVG(slug));
+    urls.push(LOBE_SVG_JSDELIVR(slug));
+  };
+  if (lobeSlug) pushLobe(lobeSlug);
+  for (const s of autoSlugs) pushLobe(s);
   if (simple) urls.push(SIMPLE(simple));
-  // Favicons only as secondary (often low-res); default monogram is reliable
+  for (const s of autoSlugs) urls.push(SIMPLE(s));
   if (domain) {
     urls.push(FAVICON(domain, 128));
     urls.push(DDG(domain));
   }
+  // Always end with monogram when nothing in the library loads
   urls.push(fallback);
   return Array.from(new Set(urls.filter(Boolean)));
 }
@@ -295,12 +385,9 @@ function iconCandidates(id, opts = {}) {
  * (still lists CDN favicons as onerror fallbacks via iconCandidates).
  */
 function resolveIconUrl(id, opts = {}) {
-  const key = String(id || '').toLowerCase().trim();
-  const meta = PROVIDER_ICON_MAP[key] || {};
-  if (meta.lobe || meta.simple) {
-    return iconCandidates(id, opts)[0];
-  }
-  return defaultIconDataUri(key, { text: opts.text });
+  // Always use the library chain (Lobe / Simple / favicon). Monogram is last candidate only.
+  const candidates = iconCandidates(id, opts);
+  return candidates[0] || defaultIconDataUri(String(id || '').toLowerCase(), { text: opts.text });
 }
 
 function buildLibraryIcons(providers = []) {
@@ -327,7 +414,7 @@ function libraryMeta() {
       'DuckDuckGo Icons',
     ],
     mapped: Object.keys(PROVIDER_ICON_MAP).length,
-    note: 'Local uploads and admin links override library. Unmapped brands use a custom monogram SVG until you upload a real icon.',
+    note: 'Every provider uses the icon library (Lobe → Simple Icons → site favicon). Monogram only if none load. Uploads/links still override.',
   };
 }
 
