@@ -56,6 +56,17 @@ a{color:var(--accent);text-decoration:none}
 .nav-drawer .nav-ico{display:flex;width:22px;justify-content:center}
 .topbar-left{display:flex;align-items:center;gap:12px;min-width:0}
 .topbar-left .titles{min-width:0}
+.proxy-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.proxy-stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.proxy-stat b{display:block;font-size:20px;font-weight:800;letter-spacing:-.03em}
+.proxy-stat span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.proxy-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;margin-bottom:8px}
+.proxy-row code{font-size:11px;word-break:break-all}
+.proxy-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.file-btn{position:relative;overflow:hidden}
+.file-btn input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.ta-proxy{width:100%;min-height:120px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:12px;font:12px/1.4 var(--mono);resize:vertical}
+
 .section-label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:22px 0 10px;display:flex;align-items:center;gap:8px}
 .section-label::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
 .list-item{display:flex;align-items:center;gap:12px;padding:13px 14px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);margin-bottom:10px;cursor:pointer;transition:border-color .2s,transform .2s,box-shadow .2s}
@@ -218,6 +229,7 @@ const NAV_ITEMS=[
   {id:'audio',label:'Audio',ico:'media'},
   {id:'custom',label:'Custom',ico:'custom'},
   {id:'icons',label:'Icons',ico:'icons'},
+  {id:'proxies',label:'Proxies',ico:'providers'},
   {id:'hidden',label:'Hidden',ico:'providers'},
 ];
 function closeNavDrawer(){const d=document.getElementById('nav-drawer-root');if(d)d.remove()}
@@ -411,7 +423,7 @@ function renderList(){
   document.querySelectorAll('#nav [data-nav]').forEach(b=>b.classList.toggle('on',b.getAttribute('data-nav')===view.tab));
   const sections=listSections();
   const html=sections.map(s=>`<div class="section-label anim">${s.title} · ${s.items.length}</div><div class="provider-grid stagger">${s.items.map(cardItem).join('')}</div>`).join('');
-  const title=({providers:'Chat',chat:'Chat',media:'Media',image:'Image',video:'Video',search:'Web Search',audio:'Audio',icons:'Icons',custom:'Custom'})[view.tab]||'Providers';
+  const title=({providers:'Chat',chat:'Chat',media:'Media',image:'Image',video:'Video',search:'Web Search',audio:'Audio',icons:'Icons',custom:'Custom',proxies:'Proxy pool',hidden:'Hidden'})[view.tab]||'Providers';
   document.getElementById('root').innerHTML=`<div class="wrap">
     ${topbarHTML(title,'Unified accounts · 9router-style')}
     <input class="search anim anim-d1" id="search" placeholder="Search providers…" value="${filter.replace(/"/g,'&quot;')}"/>
@@ -751,6 +763,96 @@ function wireCustomModal(list){
 }
 
 
+
+async function renderProxies(){
+  document.getElementById('nav').style.display='flex'; document.body.classList.add('is-admin'); paintNav();
+  let st={enabled:false,live:0,raw:0,liveList:[],hint:''};
+  try{ st = await fetch('/api/proxy-pool?detail=1').then(r=>r.json()); }catch(e){ st.hint=e.message; }
+  const liveRows=(st.liveList||[]).map(p=>`<div class="proxy-row">
+    <div style="min-width:0"><code>${p.url}</code>
+      <div class="muted" style="font-size:11px;margin-top:4px">${p.latency||0}ms · fails ${p.fails||0} · ${p.scheme||'http'}</div></div>
+    <button class="btn ghost" data-rm="${encodeURIComponent(p.raw||p.url)}" style="padding:8px;color:#fca5a5">Remove</button>
+  </div>`).join('') || '<div class="empty">No live proxies — import a list and run health check</div>';
+  const settings=st.settings||{};
+  document.getElementById('root').innerHTML=`<div class="wrap">
+    ${topbarHTML('Proxy pool','Outbound IP rotation · Pollinations / CF bypass')}
+    <div class="proxy-stats anim">
+      <div class="proxy-stat"><b>${st.live||0}</b><span>Live</span></div>
+      <div class="proxy-stat"><b>${st.raw||st.rawFullCount||0}</b><span>Loaded</span></div>
+      <div class="proxy-stat"><b>${st.enabled?'ON':'OFF'}</b><span>Status</span></div>
+    </div>
+    <div class="card anim">
+      <div class="muted" style="margin-bottom:10px;font-size:12px">${st.hint||''}${st.lastError?' · '+st.lastError:''}${st.testing?' · testing…':''}</div>
+      <div class="proxy-actions">
+        <button class="btn primary" id="pxHealth">Health check</button>
+        <button class="btn ghost" id="pxRefresh">Refresh list</button>
+        <button class="btn ghost" id="pxClear" style="color:#fca5a5">Clear all</button>
+      </div>
+      <div class="muted" style="font-size:11px;margin-bottom:8px">Settings: max ${settings.max||'—'} · timeout ${settings.testTimeoutMs||'—'}ms · cooldown ${settings.cooldownMs||'—'}ms</div>
+    </div>
+    <div class="card anim">
+      <h3 style="margin:0 0 8px;font-size:15px">Add proxies</h3>
+      <p class="muted" style="margin:0 0 10px;font-size:12px">One per line: <code>http://host:port</code> or <code>host:port</code>. CSV columns accepted (uses first host:port field). SOCKS lines are stored but only HTTP is health-tested for fetch.</p>
+      <textarea class="ta-proxy" id="pxText" placeholder="http://1.2.3.4:8080&#10;5.6.7.8:3128"></textarea>
+      <div class="proxy-actions">
+        <button class="btn primary" id="pxImport">Import (merge)</button>
+        <button class="btn ghost" id="pxReplace">Replace all</button>
+        <button class="btn ghost" id="pxPaste">Paste clipboard</button>
+        <label class="btn ghost file-btn">Upload .txt/.csv<input type="file" id="pxFile" accept=".txt,.csv,text/plain,text/csv"/></label>
+      </div>
+    </div>
+    <div class="section-label">Live proxies · ${(st.liveList||[]).length}</div>
+    <div class="anim">${liveRows}</div>
+  </div>`;
+  document.getElementById('logout').onclick=()=>{token='';sessionStorage.removeItem('admin_token');render()};
+  document.getElementById('navMenu')&&(document.getElementById('navMenu').onclick=openNavDrawer);
+  const reload=()=>renderProxies();
+  document.getElementById('pxHealth').onclick=async()=>{
+    toast('Health checking…');
+    try{ await fetch('/api/proxy-pool/refresh',{method:'POST'}); toast('Health check done'); reload(); }
+    catch(e){toast(e.message)}
+  };
+  document.getElementById('pxRefresh').onclick=reload;
+  document.getElementById('pxClear').onclick=async()=>{
+    if(!confirm('Remove all proxies from the pool?')) return;
+    try{ await fetch('/api/proxy-pool/clear',{method:'POST'}); toast('Cleared'); reload(); }catch(e){toast(e.message)}
+  };
+  async function doImport(replace){
+    const text=document.getElementById('pxText').value||'';
+    if(!text.trim()){toast('Paste or upload proxies first');return}
+    toast(replace?'Replacing…':'Importing…');
+    try{
+      const r=await fetch('/api/proxy-pool/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,replace:!!replace})});
+      const j=await r.json();
+      if(!r.ok) throw new Error(j.error||'import failed');
+      toast(`Loaded ${j.raw||0} · live ${j.live||0}`);
+      reload();
+    }catch(e){toast(e.message)}
+  }
+  document.getElementById('pxImport').onclick=()=>doImport(false);
+  document.getElementById('pxReplace').onclick=()=>{ if(confirm('Replace entire pool with this list?')) doImport(true); };
+  document.getElementById('pxPaste').onclick=async()=>{
+    try{
+      const t=await navigator.clipboard.readText();
+      document.getElementById('pxText').value=t;
+      toast('Pasted from clipboard');
+    }catch{toast('Clipboard blocked — paste manually into the box')}
+  };
+  document.getElementById('pxFile').onchange=async(e)=>{
+    const f=e.target.files&&e.target.files[0]; if(!f) return;
+    const t=await f.text();
+    document.getElementById('pxText').value=t;
+    toast('Loaded '+f.name);
+  };
+  document.querySelectorAll('[data-rm]').forEach(b=>b.onclick=async()=>{
+    const u=decodeURIComponent(b.getAttribute('data-rm'));
+    try{
+      await fetch('/api/proxy-pool/remove',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:u})});
+      toast('Removed'); reload();
+    }catch(e){toast(e.message)}
+  });
+}
+
 async function renderHidden(){
   document.getElementById('nav').style.display='flex'; document.body.classList.add('is-admin'); paintNav();
   let all=[];
@@ -803,6 +905,7 @@ async function render(){
   try{
     if(!token) return renderLogin();
     await load(); wireNav();
+    if(view.page==='proxies'||view.tab==='proxies') return renderProxies();
     if(view.page==='hidden'||view.tab==='hidden') return renderHidden();
     if(view.page==='icons'||view.tab==='icons') return renderIcons();
     if(view.page==='custom'||view.tab==='custom') return renderCustom();

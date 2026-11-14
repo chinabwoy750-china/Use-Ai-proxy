@@ -657,26 +657,45 @@ const server = http.createServer(async (req, res) => {
 
     
     if (pathname === '/api/proxy-pool' && req.method === 'GET') {
-      return sendJson(res, 200, proxyPool ? proxyPool.stats() : { enabled: false });
+      const detail = url.searchParams.get('detail') === '1';
+      if (!proxyPool) return sendJson(res, 200, { enabled: false });
+      return sendJson(res, 200, detail && proxyPool.detailedStats ? proxyPool.detailedStats() : proxyPool.stats());
     }
     if (pathname === '/api/proxy-pool/refresh' && req.method === 'POST') {
       if (proxyPool && proxyPool.refresh) await proxyPool.refresh(true);
-      return sendJson(res, 200, proxyPool ? proxyPool.stats() : {});
+      return sendJson(res, 200, proxyPool.detailedStats ? proxyPool.detailedStats() : proxyPool.stats());
     }
     if (pathname === '/api/proxy-pool/import' && req.method === 'POST') {
       if (!proxyPool || !proxyPool.importList) return sendJson(res, 503, { error: 'proxy pool missing' });
       const raw = await readBody(req);
       let text = raw;
+      let replace = false;
       try {
         const j = JSON.parse(raw);
         text = j.text || j.proxies || j.list || raw;
+        replace = !!(j.replace || j.mode === 'replace');
       } catch (_) {}
       try {
-        const st = await proxyPool.importList(text);
+        const st = await proxyPool.importList(text, { replace });
         return sendJson(res, 200, st);
       } catch (e) {
         return sendJson(res, 400, { error: e.message || String(e) });
       }
+    }
+    if (pathname === '/api/proxy-pool/remove' && req.method === 'POST') {
+      if (!proxyPool || !proxyPool.removeProxy) return sendJson(res, 503, { error: 'proxy pool missing' });
+      const raw = await readBody(req);
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { return sendJson(res, 400, { error: 'bad json' }); }
+      try {
+        return sendJson(res, 200, await proxyPool.removeProxy(body.url || body.proxy));
+      } catch (e) {
+        return sendJson(res, 400, { error: e.message || String(e) });
+      }
+    }
+    if (pathname === '/api/proxy-pool/clear' && req.method === 'POST') {
+      if (!proxyPool || !proxyPool.clearPool) return sendJson(res, 503, { error: 'proxy pool missing' });
+      return sendJson(res, 200, await proxyPool.clearPool());
     }
 
     if (pathname === '/health' || pathname === '/') {

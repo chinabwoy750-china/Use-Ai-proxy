@@ -47,7 +47,15 @@ function parseLine(line) {
 function loadFromText(text) {
   const out = [];
   const seen = new Set();
-  for (const line of String(text || '').split(/\r?\n/)) {
+  for (let line of String(text || '').split(/\r?\n/)) {
+    line = String(line || '').trim();
+    if (!line || line.startsWith('#')) continue;
+    // CSV: take first cell that looks like host:port or URL
+    if (line.includes(',')) {
+      const cells = line.split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
+      const hit = cells.find((c) => /:\d+$/.test(c) || /^[a-z][a-z0-9+.-]*:\/\//i.test(c) || /^\d+\.\d+\.\d+\.\d+/.test(c));
+      if (hit) line = hit;
+    }
     const p = parseLine(line);
     if (!p || seen.has(p)) continue;
     seen.add(p);
@@ -213,21 +221,68 @@ async function refresh(force) {
   return stats();
 }
 
-async function importList(text) {
-  const list = loadFromText(text);
-  if (!list.length) throw new Error('No valid proxy lines');
-  // keep unique merge with existing
-  rawList = [...new Set([...rawList, ...list])];
+async function persistRaw() {
   const body = rawList.join('\n');
   await redisSet(body);
-  // also write local if possible
   try {
     fs.writeFileSync(path.join(process.cwd(), 'proxies.txt'), body);
   } catch (_) {}
+  return body;
+}
+
+async function importList(text, opts = {}) {
+  const list = loadFromText(text);
+  if (!list.length) throw new Error('No valid proxy lines (use http://host:port or host:port per line/CSV)');
+  if (opts.replace) rawList = [...new Set(list)];
+  else rawList = [...new Set([...rawList, ...list])];
+  await persistRaw();
   lastImport = Date.now();
   await refresh(true);
-  return stats();
+  return detailedStats();
 }
+
+async function removeProxy(url) {
+  const target = parseLine(url) || String(url || '').trim();
+  if (!target) throw new Error('url required');
+  rawList = rawList.filter((p) => p !== target);
+  live = live.filter((p) => p.url !== target);
+  await persistRaw();
+  return detailedStats();
+}
+
+async function clearPool() {
+  rawList = [];
+  live = [];
+  await persistRaw();
+  lastRefresh = Date.now();
+  return detailedStats();
+}
+
+function detailedStats() {
+  const base = stats();
+  return {
+    ...base,
+    settings: {
+      max: MAX,
+      testUrl: TEST_URL,
+      testTimeoutMs: TEST_MS,
+      cooldownMs: COOLDOWN,
+      enabledEnv: process.env.PROXY_POOL_ENABLED || '',
+    },
+    liveList: live.map((p) => ({
+      url: p.url.replace(/\/\/([^:]+:)[^@]+@/, '//$1***@'),
+      raw: p.url,
+      latency: p.latency,
+      fails: p.fails,
+      lastOk: p.lastOk,
+      lastFail: p.lastFail || 0,
+      scheme: p.scheme,
+    })),
+    rawList: rawList.map((u) => u.replace(/\/\/([^:]+:)[^@]+@/, '//$1***@')),
+    rawFullCount: rawList.length,
+  };
+}
+
 
 function enabled() {
   if (process.env.PROXY_POOL_ENABLED === '0') return false;
@@ -329,10 +384,13 @@ setInterval(() => {
 module.exports = {
   refresh,
   importList,
+  removeProxy,
+  clearPool,
   pick,
   report,
   fetchWithPool,
   stats,
+  detailedStats,
   enabled,
   parseLine,
   loadFromText,
