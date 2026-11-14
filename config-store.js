@@ -77,6 +77,7 @@ const KEYS = [
   'SYNTX_TOKEN',
   'SYNTX_JWT',
   'CUSTOM_ENDPOINTS',
+  'HIDDEN_PROVIDERS',
   'KIRO_ACCESS_TOKEN',
   'KIRO_REFRESH_TOKEN',
   'KIRO_API_KEY',
@@ -373,6 +374,32 @@ function checkAdminAuth(req) {
   return { ok: false, reason: 'unauthorized' };
 }
 
+
+function getHiddenProviders() {
+  try {
+    const raw = process.env.HIDDEN_PROVIDERS || '[]';
+    const j = JSON.parse(raw);
+    return Array.isArray(j) ? j.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function hideProvider(id) {
+  const idn = String(id || '').trim();
+  if (!idn) throw new Error('id required');
+  const list = [...new Set([...getHiddenProviders(), idn])];
+  await saveFromAdmin({ HIDDEN_PROVIDERS: JSON.stringify(list) });
+  return list;
+}
+
+async function unhideProvider(id) {
+  const idn = String(id || '').trim();
+  const list = getHiddenProviders().filter((x) => x !== idn);
+  await saveFromAdmin({ HIDDEN_PROVIDERS: JSON.stringify(list) });
+  return list;
+}
+
 module.exports = {
   KEYS,
   SENSITIVE,
@@ -386,5 +413,8 @@ module.exports = {
   applyEnv,
   getPublicProviders,
   checkAdminAuth,
+  getHiddenProviders,
+  hideProvider,
+  unhideProvider,
   readFileConfig,
 };

@@ -260,8 +260,38 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/admin-providers.json') {
       const f = path.join(PUBLIC, 'admin-providers.json');
       if (!fs.existsSync(f)) { res.writeHead(404); return res.end('[]'); }
+      let list = [];
+      try { list = JSON.parse(fs.readFileSync(f, 'utf8')); } catch { list = []; }
+      const hidden = new Set((config.getHiddenProviders && config.getHiddenProviders()) || []);
+      const showHidden = url.searchParams.get('all') === '1';
+      if (!showHidden) list = list.filter((p) => p && !hidden.has(p.id));
+      else list = list.map((p) => ({ ...p, hidden: hidden.has(p.id) }));
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-      return res.end(fs.readFileSync(f));
+      return res.end(JSON.stringify(list));
+    }
+
+    if (pathname === '/api/admin/providers/hide' && req.method === 'POST') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason });
+      const raw = await readBody(req);
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { return sendJson(res, 400, { error: 'bad json' }); }
+      const list = await config.hideProvider(body.id);
+      return sendJson(res, 200, { ok: true, hidden: list });
+    }
+    if (pathname === '/api/admin/providers/unhide' && req.method === 'POST') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason });
+      const raw = await readBody(req);
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch { return sendJson(res, 400, { error: 'bad json' }); }
+      const list = await config.unhideProvider(body.id);
+      return sendJson(res, 200, { ok: true, hidden: list });
+    }
+    if (pathname === '/api/admin/providers/hidden' && req.method === 'GET') {
+      const auth = config.checkAdminAuth(req);
+      if (!auth.ok) return sendJson(res, 401, { error: auth.reason });
+      return sendJson(res, 200, { hidden: config.getHiddenProviders() });
     }
 
     if (pathname === '/admin' || pathname === '/admin/') {
