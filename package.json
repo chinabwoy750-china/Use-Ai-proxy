@@ -1,6 +1,6 @@
 {
   "name": "useai-proxy",
-  "version": "3.9.0",
+  "version": "3.10.0",
   "description": "OpenAI-compatible multi-provider proxy + admin + Upstash Redis config",
   "main": "server.js",
   "engines": {
@@ -9,5 +9,9 @@
   "scripts": {
     "start": "node server.js"
   },
-  "dependencies": {}
+  "dependencies": {
+    "socks-proxy-agent": "^8.0.5",
+    "https-proxy-agent": "^7.0.6",
+    "undici": "^6.21.0"
+  }
 }

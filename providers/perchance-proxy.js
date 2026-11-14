@@ -1,4 +1,7 @@
 'use strict';
+let fetchWithPool = null;
+try { fetchWithPool = require('../proxy-pool').fetchWithPool; } catch (_) {}
+const poolFetch = (...a) => (fetchWithPool ? fetchWithPool(...a) : fetch(...a));
 /**
  * Perchance AI Text-to-Image → OpenAI /v1/images/generations
  *

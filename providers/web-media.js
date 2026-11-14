@@ -1,3 +1,4 @@
+let fetchWithPool=null;try{fetchWithPool=require('../proxy-pool').fetchWithPool}catch(_){}
 'use strict';
 /**
  * Unified web search / web fetch / image / video endpoints

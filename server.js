@@ -49,6 +49,7 @@ const maxaiProxy = load('./providers/maxai-proxy');
 const pollinationsProxy = load('./providers/pollinations-proxy');
 const perchanceProxy = load('./providers/perchance-proxy');
 const webMedia = load('./providers/web-media');
+const proxyPool = load('./proxy-pool');
 const doubaoProxy = load('./providers/doubao-proxy');
 const zaiProxy = load('./providers/zai-proxy');
 const yuanbaoProxy = load('./providers/yuanbao-proxy');
@@ -623,10 +624,20 @@ const server = http.createServer(async (req, res) => {
     }
 
 
+    
+    if (pathname === '/api/proxy-pool' && req.method === 'GET') {
+      return sendJson(res, 200, proxyPool ? proxyPool.stats() : { enabled: false });
+    }
+    if (pathname === '/api/proxy-pool/refresh' && req.method === 'POST') {
+      if (proxyPool && proxyPool.refresh) await proxyPool.refresh(true);
+      return sendJson(res, 200, proxyPool ? proxyPool.stats() : {});
+    }
+
     if (pathname === '/health' || pathname === '/') {
       return sendJson(res, 200, {
         ok: true,
         ...config.getPublicProviders(),
+        proxyPool: proxyPool && proxyPool.stats ? proxyPool.stats() : null,
         admin: '/admin',
       });
     }

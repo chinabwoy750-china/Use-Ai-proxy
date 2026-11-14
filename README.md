@@ -120,3 +120,16 @@ npm start
   It only works when run locally with a cookie from the same machine.
 - **OpenCode Free**: may return 403 without browser TLS fingerprint.
 - **UC**: `__client` is HttpOnly — copy from DevTools Application → Cookies, not `document.cookie`.
+
+
+## Proxy pool (bypass datacenter IP blocks)
+
+Outbound requests (e.g. Perchance) can rotate through HTTP/SOCKS proxies.
+
+1. Put proxies in `proxies.txt` (one `http://host:port` or `socks5://host:port` per line), **or**
+2. Set `PROXY_POOL` env (comma-separated), **or**
+3. Set `PROXY_POOL_URL` to a raw text list URL.
+
+Optional: `PROXY_POOL_MAX=80`, `PROXY_POOL_ENABLED=1`, `GET /api/proxy-pool`, `POST /api/proxy-pool/refresh`.
+
+Free public proxies die fast; residential works best for Cloudflare sites.
