@@ -118,7 +118,7 @@
   {
     "group": "web",
     "auth": "session",
-    "kind": "media",
+    "kind": "chat",
     "id": "uc",
     "name": "UC / uncensored.com",
     "color": "#7C3AED",
@@ -712,7 +712,7 @@
     "scraper": "cookie"
   },
   {
-    "group": "web",
+    "group": "api-free",
     "auth": "none",
     "kind": "chat",
     "id": "pollinations",
@@ -1157,8 +1157,8 @@
     "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
   },
   {
-    "group": "free",
-    "kind": "chat",
+    "group": "audio",
+    "kind": "audio",
     "id": "edge-tts",
     "name": "Edge TTS",
     "color": "#00A4EF",
@@ -1169,11 +1169,11 @@
     ],
     "auth": "none",
     "fields": [],
-    "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
+    "blurb": "Text-to-speech via Microsoft Edge voices (free)"
   },
   {
-    "group": "free",
-    "kind": "chat",
+    "group": "audio",
+    "kind": "audio",
     "id": "google-tts",
     "name": "Google TTS",
     "color": "#EA4335",
@@ -1184,11 +1184,11 @@
     ],
     "auth": "none",
     "fields": [],
-    "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
+    "blurb": "Google Translate TTS (free)"
   },
   {
-    "group": "free",
-    "kind": "chat",
+    "group": "audio",
+    "kind": "audio",
     "id": "coqui",
     "name": "Coqui TTS",
     "color": "#7C3AED",
@@ -1199,11 +1199,11 @@
     ],
     "auth": "none",
     "fields": [],
-    "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
+    "blurb": "Coqui TTS"
   },
   {
-    "group": "free",
-    "kind": "chat",
+    "group": "audio",
+    "kind": "audio",
     "id": "tortoise",
     "name": "Tortoise TTS",
     "color": "#64748B",
@@ -1214,11 +1214,11 @@
     ],
     "auth": "none",
     "fields": [],
-    "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
+    "blurb": "Tortoise TTS"
   },
   {
-    "group": "free",
-    "kind": "chat",
+    "group": "tools",
+    "kind": "tools",
     "id": "local-device",
     "name": "Local Device",
     "color": "#22C55E",
@@ -1232,8 +1232,8 @@
     "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
   },
   {
-    "group": "free",
-    "kind": "chat",
+    "group": "tools",
+    "kind": "tools",
     "id": "devin-cli",
     "name": "Devin CLI",
     "color": "#111",
@@ -1247,8 +1247,8 @@
     "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
   },
   {
-    "group": "free",
-    "kind": "chat",
+    "group": "tools",
+    "kind": "tools",
     "id": "gemini-cli",
     "name": "Gemini CLI",
     "color": "#4285F4",
@@ -1262,7 +1262,7 @@
     "blurb": "Listed from 9router free tier. Configure upstream URL/credentials if the proxy module requires them."
   },
   {
-    "group": "free",
+    "group": "apikey",
     "kind": "chat",
     "id": "nous",
     "name": "Nous Research",

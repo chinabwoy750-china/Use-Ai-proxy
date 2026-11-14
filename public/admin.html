@@ -323,8 +323,9 @@ function listSections(){
     if(kindTab==='video') return p.kind==='video';
     if(kindTab==='search') return p.kind==='search'||p.kind==='tools';
     if(kindTab==='audio') return p.kind==='audio';
-    if(kindTab==='providers'||kindTab==='chat') return !p.kind||p.kind==='chat'||!['image','video','search','audio','media','tools'].includes(p.kind);
-    return false;
+    if(kindTab==='tools') return p.kind==='tools';
+    if(kindTab==='providers'||kindTab==='chat') return p.kind==='chat' || !p.kind;
+    return true;
   }).filter(p=>!filter||p.name.toLowerCase().includes(filter)||p.id.includes(filter));
 
   const sections=[];
@@ -340,11 +341,12 @@ function listSections(){
   } else if(kindTab==='video'){
     sections.push({title:'Video generation', items:list});
   } else if(kindTab==='search'){
-    sections.push({title:'Web search', items:list.filter(p=>/search|searx|tavily|brave|serper|exa/i.test(p.id+p.name))});
+    sections.push({title:'Web search', items:list.filter(p=>p.kind==='search' && /search|searx|tavily|brave|serper|exa/i.test(p.id+p.name))});
     sections.push({title:'Web fetch', items:list.filter(p=>/jina|firecrawl|fetch/i.test(p.id+p.name))});
+    sections.push({title:'CLI & local tools', items:list.filter(p=>p.kind==='tools')});
     sections.push({title:'Other search tools', items:list.filter(p=>!sections.some(s=>s.items.includes(p)))});
   } else if(kindTab==='audio'){
-    sections.push({title:'Text-to-speech', items:list.filter(p=>/tts|eleven|openai-audio|edge/i.test(p.id))});
+    sections.push({title:'Text-to-speech', items:list.filter(p=>/tts|eleven|openai-audio|edge|coqui|tortoise|google-tts/i.test(p.id+p.name))});
     sections.push({title:'Speech-to-text', items:list.filter(p=>/deepgram|whisper|assembly|stt/i.test(p.id+p.name))});
     sections.push({title:'Audio · Other', items:list.filter(p=>!sections.some(s=>s.items.includes(p)))});
   } else if(kindTab==='media'){
